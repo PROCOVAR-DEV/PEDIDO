@@ -460,7 +460,7 @@ export const RepartoSyncPanel = () => {
               setForm((f) => ({ ...f, secret: v }));
             }}
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button isLoading={ocupado === "secret"} size="sm" variant="bordered" onPress={() => void generarSecret()}>
               Generar
             </Button>

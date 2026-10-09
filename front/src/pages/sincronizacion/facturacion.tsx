@@ -262,7 +262,7 @@ export default function SincronizacionFacturacionPage() {
             variant="bordered"
             onChange={(e) => irAlDia(e.target.value)}
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
               variant={esHoy ? "solid" : "flat"}

@@ -73,3 +73,13 @@ export const cards = tv({
     },
   },
 });
+
+/**
+ * Un botón dentro de la fila de acciones de una tarjeta (`flex flex-row flex-wrap gap-2`).
+ *
+ * En el móvil van de dos en dos, crecen para repartirse el ancho y SALTAN DE RENGLÓN cuando no caben: antes cada
+ * botón iba en `flex-1` sin poder partirse, y con cuatro (Copiar, Ver detalles, Dar de baja,
+ * Eliminar) los últimos se salían de la tarjeta y quedaban cortados. Desde `md` ocupa lo suyo.
+ */
+export const ACCION_TARJETA =
+  "grow basis-[7.5rem] px-2 md:grow-0 md:basis-auto md:px-4";

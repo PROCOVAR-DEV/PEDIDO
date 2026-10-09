@@ -18,7 +18,7 @@ import {
 } from "@heroui/react";
 import { useEffect, useState, useCallback } from "react";
 
-import { cards } from "../primitives";
+import { ACCION_TARJETA, cards } from "../primitives";
 import Icons from "../icons/iconify";
 import { VendedorSelect } from "../vendedor-select";
 
@@ -363,9 +363,9 @@ export const ClientesList = () => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-row gap-2 w-full md:w-auto">
+                    <div className="flex flex-row flex-wrap gap-2 w-full md:w-auto">
                       <Button
-                        className="flex-1 md:flex-none"
+                        className={ACCION_TARJETA}
                         color={
                           copiedClienteId === cliente.id ? "success" : "default"
                         }
@@ -376,7 +376,7 @@ export const ClientesList = () => {
                         {copiedClienteId === cliente.id ? "Copiado" : "Copiar"}
                       </Button>
                       <Button
-                        className="flex-1 md:flex-none"
+                        className={ACCION_TARJETA}
                         color="primary"
                         startContent={<Icons.eye className="size-5" />}
                         variant="ghost"

@@ -36,6 +36,7 @@ import {
   type Vendedor,
   type Gestor, type Sucursal } from "@/stores/datos/vendedores";
 import { useCerrarAlPulsarFuera } from "@/hooks/cerrar-al-pulsar-fuera";
+import { ACCION_TARJETA } from "@/components/primitives";
 
 // Los tipos Vendedor/Gestor viven en el store: los comparten quien los pinta y
 // quien los trae, y asi no se separan cuando cambie el api.
@@ -705,9 +706,9 @@ export const VendedoresList = () => {
                           ]}
                         </Select>
                       )}
-                      <div className="flex flex-row gap-2">
+                      <div className="flex flex-row flex-wrap gap-2">
                         <Button
-                          className="flex-1 md:flex-none"
+                          className={ACCION_TARJETA}
                           color={
                             copiedVendedorId === vendedor.id
                               ? "success"
@@ -724,7 +725,7 @@ export const VendedoresList = () => {
                         {puedeGestionar && (
                           <>
                             <Button
-                              className="flex-1 md:flex-none"
+                              className={ACCION_TARJETA}
                               color="primary"
                               startContent={<Icons.eye className="size-5" />}
                               variant="ghost"
@@ -733,7 +734,7 @@ export const VendedoresList = () => {
                               Ver Detalles
                             </Button>
                             <Button
-                              className="flex-1 md:flex-none"
+                              className={ACCION_TARJETA}
                               color={vendedor.activo ? "danger" : "success"}
                               isLoading={savingId === vendedor.id}
                               variant="ghost"
@@ -749,7 +750,7 @@ export const VendedoresList = () => {
                                 lo pulse para descubrir que no. */}
                             {(vendedor._count?.pedidos ?? 0) === 0 && (
                               <Button
-                                className="flex-1 md:flex-none"
+                                className={ACCION_TARJETA}
                                 color="danger"
                                 isLoading={savingId === vendedor.id}
                                 startContent={<Icons.trash className="size-5" />}
