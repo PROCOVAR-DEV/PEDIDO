@@ -27,6 +27,7 @@ import { claveDePedido, clavesDeBorrados, folioBaseDe, reservarFoliosBorrados } 
 import { redisEnabled, publishJSON, getSubscriber, CH_IMPORT_DONE, CH_IMPORT_FAILED } from '../lib/redis';
 import { importQueue } from '../lib/queues';
 import { anotarEnCurso, anotarHecha, borrarEnCurso, leerEnCurso, leerHechas } from '../lib/importEnCurso';
+import { anotarImportacion } from '../lib/registroIngesta';
 import { mintSseTicket, consumeSseTicket } from '../lib/sseTickets';
 import { ingestaAuth } from '../middleware/ingestaAuth';
 
@@ -1237,6 +1238,38 @@ router.patch('/:id/estado', async (req, res) => {
   }
 });
 
+/**
+ * De qué sucursal es un archivo que llega por /bulk.
+ *
+ * n8n se autentica con clave de API y no manda sucursal, así que se resuelve: primero la de
+ * quien sube, luego la que diga `?sucursal=CÓDIGO` (cada flujo de n8n es de una sucursal, y su
+ * carpeta del Drive también), y si no, la de los pedidos que ya existen con esos folios.
+ */
+async function sucursalDelArchivo(records: unknown, uploaderSucursalId: string | null, codigo: unknown): Promise<string | null> {
+  if (uploaderSucursalId) return uploaderSucursalId;
+
+  if (typeof codigo === 'string' && codigo.trim()) {
+    const s = await prisma.sucursal.findFirst({ where: { codigo: codigo.trim().toUpperCase() }, select: { id: true } });
+
+    if (s) return s.id;
+  }
+
+  const folios = (Array.isArray(records) ? records : [])
+    .map((r: any) => String(r?.folio || r?.Folio || '').toUpperCase().trim())
+    .filter(Boolean)
+    .slice(0, 20);
+
+  if (folios.length === 0) return null;
+
+  const uno = await prisma.pedido.findFirst({
+    where: { folio: { in: folios }, sucursalId: { not: null } },
+    select: { sucursalId: true },
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  return uno?.sucursalId ?? null;
+}
+
 router.post('/bulk', ingestaAuth, async (req, res) => {
   try {
     // El Operador no sube datos: factura con lo que ya está. La ingesta
@@ -1259,7 +1292,23 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
     const lote = Number(req.body?.lote) || null;
     const deLotes = Number(req.body?.deLotes) || null;
 
+    // De qué carpeta del Drive viene (el flujo de n8n), si lo dice. Es lo que permite
+    // buscar «por carpeta» en Configuración → Ingesta.
+    const fuente = typeof req.query.fuente === 'string' && req.query.fuente.trim() ? req.query.fuente.trim().slice(0, 80) : null;
+    const origenDelArchivo: 'n8n' | 'pantalla' = req.query.sync === '1' || req.query.sync === 'true' ? 'n8n' : 'pantalla';
+
+    // Cada rechazo queda APUNTADO con el motivo que dio PEDIDO: n8n mueve el archivo a
+    // Errores y nadie más se entera de cuál fue ni por qué.
+    const rechazar = async (estadoHttp: number, motivo: string, sucursalId: string | null = null) => {
+      void anotarImportacion({
+        archivo, sucursalId, fuente, origen: origenDelArchivo, estado: 'rechazado', estadoHttp, motivo,
+        filas: Array.isArray(records) ? records.length : 0,
+      });
+    };
+
     if (!records || !Array.isArray(records)) {
+      await rechazar(400, 'El archivo no trae filas legibles (el cuerpo no lleva «records»).', await sucursalDelArchivo([], null, req.query.sucursal));
+
       return res.status(400).json({ error: 'Invalid records data' });
     }
 
@@ -1270,7 +1319,11 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
       preferUserSucursal: true,
       defaultAllForAdmin: false,
     });
-    if (scopeError) return res.status(403).json({ error: scopeError });
+    if (scopeError) {
+      await rechazar(403, scopeError, await sucursalDelArchivo(records, null, req.query.sucursal));
+
+      return res.status(403).json({ error: scopeError });
+    }
 
     // ENCOLAR y responder al toque (202) SOLO si se optó explícitamente con
     // IMPORT_USE_QUEUE=true (y hay Redis). Requiere que el worker (node dist/worker.js)
@@ -1329,7 +1382,11 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
         },
       );
 
-      if (!outcome.ok) return res.status(409).json({ error: outcome.error, imported: 0 });
+      if (!outcome.ok) {
+        await rechazar(409, outcome.error ?? 'Rechazado', await sucursalDelArchivo(records, uploaderSucursalId ?? null, req.query.sucursal));
+
+        return res.status(409).json({ error: outcome.error, imported: 0 });
+      }
 
       // Queda apuntado lo que acaba de entrar: las tandas pequeñas terminan tan rápido
       // que la llave de «en curso» no la ve nadie, y sin esto la barra seguiría muda.
@@ -1341,27 +1398,10 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
        * «Sin sucursal» — justo el dato que hace falta para saber de quién es el archivo.
        * Los pedidos que acaban de entrar sí la tienen: se resuelve de ahí.
        */
-      let sucursalDelArchivo = uploaderSucursalId ?? null;
-
-      if (!sucursalDelArchivo) {
-        const folios = records
-          .map((r: any) => String(r?.folio || r?.Folio || '').toUpperCase().trim())
-          .filter(Boolean)
-          .slice(0, 20);
-
-        if (folios.length > 0) {
-          const uno = await prisma.pedido.findFirst({
-            where: { folio: { in: folios }, sucursalId: { not: null } },
-            select: { sucursalId: true },
-            orderBy: { updatedAt: 'desc' },
-          });
-
-          sucursalDelArchivo = uno?.sucursalId ?? null;
-        }
-      }
+      const sucursalDeEste = await sucursalDelArchivo(records, uploaderSucursalId ?? null, req.query.sucursal);
 
       void anotarHecha({
-        archivo, sucursalId: sucursalDelArchivo, origen: base.origen,
+        archivo, sucursalId: sucursalDeEste, origen: base.origen,
         filas: records.length,
         creados: outcome.results.created,
         actualizados: outcome.results.updated,
@@ -1373,6 +1413,15 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
         at: Date.now(),
       });
 
+      void anotarImportacion({
+        archivo, sucursalId: sucursalDeEste, fuente, origen: origenDelArchivo,
+        estado: outcome.results.failed > 0 ? 'con_problemas' : 'entro', estadoHttp: 200,
+        filas: records.length, creados: outcome.results.created, actualizados: outcome.results.updated,
+        fallidos: outcome.results.failed, omitidos: outcome.results.omitidos ?? 0,
+        motivo: outcome.results.failed > 0 ? `${outcome.results.failed} fila(s) con problema` : null,
+        ms: Date.now() - base.desdeAt,
+      });
+
       return res.json({ success: true, results: outcome.results });
     } finally {
       // Pase lo que pase —terminó, falló o reventó—, deja de anunciarse como en curso.
@@ -1380,6 +1429,15 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
     }
   } catch (err) {
     console.error('Bulk create error:', err);
+    void anotarImportacion({
+      archivo: typeof req.body?.archivo === 'string' ? req.body.archivo.slice(0, 200) : null,
+      sucursalId: null,
+      fuente: typeof req.query.fuente === 'string' ? req.query.fuente.slice(0, 80) : null,
+      origen: req.query.sync === '1' || req.query.sync === 'true' ? 'n8n' : 'pantalla',
+      estado: 'rechazado', estadoHttp: 500,
+      filas: Array.isArray(req.body?.records) ? req.body.records.length : 0,
+      motivo: `Error interno al importar: ${String((err as Error)?.message ?? err).slice(0, 300)}`,
+    });
     res.status(500).json({ error: 'Failed to create orders' });
   }
 });
@@ -1416,6 +1474,69 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
  * lleva el CSV entero y sacarlo por una API para pintar una barra sería mover megas para
  * nada.
  */
+/**
+ * GET /orders/ingesta — todos los archivos que han llegado a /bulk, con lo que pasó.
+ *
+ * SÓLO el super admin (Jose, 13/10/2026: «esto es solo para mí, para los superadmins»): es la
+ * ingesta de TODAS las sucursales, con nombres de vendedores y motivos. Una clave de API no
+ * es super admin, así que tampoco lo ve.
+ *
+ * Paginado y filtrable por sucursal —que es la carpeta del Drive de la que vino—, por estado,
+ * por nombre de archivo y por fechas, para poder revisar por qué algo no entró.
+ */
+router.get('/ingesta', async (req, res) => {
+  if (!getRequesterContext(req).isSuperAdmin) {
+    return res.status(403).json({ error: 'Solo el super administrador puede ver la ingesta.' });
+  }
+
+  try {
+    const page = Math.max(parseInt(String(req.query.page)) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 25, 1), 100);
+    const estado = typeof req.query.estado === 'string' ? req.query.estado : '';
+    const sucursal = typeof req.query.sucursalId === 'string' ? req.query.sucursalId : '';
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const desde = typeof req.query.desde === 'string' && req.query.desde ? new Date(`${req.query.desde}T00:00:00`) : null;
+    const hasta = typeof req.query.hasta === 'string' && req.query.hasta ? new Date(`${req.query.hasta}T23:59:59.999`) : null;
+
+    const donde: Record<string, unknown> = {};
+
+    if (sucursal === 'sin') donde.sucursalId = null;
+    else if (sucursal) donde.sucursalId = sucursal;
+    if (q) donde.OR = [{ archivo: { contains: q, mode: 'insensitive' } }, { fuente: { contains: q, mode: 'insensitive' } }, { motivo: { contains: q, mode: 'insensitive' } }];
+    if ((desde && !isNaN(desde.getTime())) || (hasta && !isNaN(hasta.getTime()))) {
+      donde.createdAt = {
+        ...(desde && !isNaN(desde.getTime()) ? { gte: desde } : {}),
+        ...(hasta && !isNaN(hasta.getTime()) ? { lte: hasta } : {}),
+      };
+    }
+
+    const dondeConEstado = estado ? { ...donde, estado } : donde;
+    const [total, filas, conteos, sucursales] = await Promise.all([
+      prisma.importacionArchivo.count({ where: dondeConEstado }),
+      prisma.importacionArchivo.findMany({
+        where: dondeConEstado, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit,
+      }),
+      // Los contadores de arriba respetan los demás filtros pero NO el de estado: son lo que
+      // se puede elegir, y con el estado puesto sólo saldría uno.
+      prisma.importacionArchivo.groupBy({ by: ['estado'], where: donde, _count: { _all: true } }),
+      prisma.sucursal.findMany({ select: { id: true, codigo: true, nombre: true } }),
+    ]);
+    const nombre = new Map(sucursales.map((x) => [x.id, x.codigo || x.nombre]));
+    const resumen: Record<string, number> = { entro: 0, con_problemas: 0, rechazado: 0 };
+
+    for (const c of conteos) resumen[c.estado] = c._count._all;
+
+    res.json({
+      data: filas.map((f) => ({ ...f, sucursal: (f.sucursalId && nombre.get(f.sucursalId)) || null })),
+      pagination: { page, limit, total, totalPages: Math.max(Math.ceil(total / limit), 1) },
+      resumen,
+    });
+  } catch (err) {
+    console.error('Ingesta list error:', err);
+    res.status(500).json({ error: 'No se pudo leer la ingesta.' });
+  }
+});
+
 router.get('/cola', async (req, res) => {
   const { sucursalId, error } = resolveSucursalFilter(req);
 

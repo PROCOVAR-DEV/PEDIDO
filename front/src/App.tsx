@@ -50,6 +50,9 @@ const SincronizacionEntregaPage = lazy(
 const SincronizacionRepartoPage = lazy(
   () => import("./pages/sincronizacion/reparto"),
 );
+const SincronizacionIngestaPage = lazy(
+  () => import("./pages/sincronizacion/ingesta"),
+);
 const ReportePedidosFechaPage = lazy(
   () => import("./pages/reportes/pedidos-fecha"),
 );
@@ -267,6 +270,12 @@ function App() {
               <Route
                 element={<SincronizacionRepartoPage />}
                 path="/panel/sincronizacion/reparto"
+              />
+              {/* Los archivos que n8n manda a PEDIDO y qué pasó con cada uno. Sólo el
+                  super administrador lo ve (la pantalla y la API lo comprueban). */}
+              <Route
+                element={<SincronizacionIngestaPage />}
+                path="/panel/sincronizacion/ingesta"
               />
               <Route
                 element={<ConfiguracionPage />}

@@ -670,3 +670,40 @@ model EntregaIntento {
   @@index([ultimoAt])
   @@map("EntregaIntento")
 }
+
+/// Cada archivo que llega a /orders/bulk —de n8n o de la pantalla— con lo que pasó.
+///
+/// n8n manda cada CSV a PEDIDO y, si PEDIDO lo rechaza, lo mueve a la carpeta Errores del
+/// Drive y da la ejecución por buena: nadie sabía cuál falló ni por qué. El 12/10/2026 el de
+/// Deiler (Palma Soriano) llevaba horas en Errores porque Sidney lo había dado de baja; el
+/// de Melissa (Las Tunas), cinco días. Aquí queda cada intento, con su motivo, para
+/// consultarlo desde Configuración → Sincronizadores → Ingesta.
+model ImportacionArchivo {
+  id           String   @id @default(cuid())
+  archivo      String?
+  /// La sucursal del archivo: la que dijo n8n (`?sucursal=`), la de quien lo subió, o la de
+  /// los pedidos que ya existen con esos folios. Nulo si no se pudo saber.
+  sucursalId   String?
+  /// De dónde viene: el flujo de n8n —que es la carpeta del Drive, «Ingesta Palma»— o
+  /// «pantalla» si lo subió alguien a mano.
+  fuente       String?
+  origen       String
+  /// `entro` · `con_problemas` (entró pero alguna fila falló) · `rechazado`.
+  estado       String
+  /// El código con que PEDIDO contestó (200, 400, 403, 409, 500).
+  estadoHttp   Int
+  filas        Int      @default(0)
+  creados      Int      @default(0)
+  actualizados Int      @default(0)
+  fallidos     Int      @default(0)
+  omitidos     Int      @default(0)
+  /// Lo que PEDIDO dijo, tal cual, cuando no entró.
+  motivo       String?
+  ms           Int?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([sucursalId, createdAt])
+  @@index([estado, createdAt])
+  @@map("ImportFile")
+}

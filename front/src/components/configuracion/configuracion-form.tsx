@@ -27,9 +27,12 @@ import Icons from "../icons/iconify";
 import { cards } from "@/components/primitives";
 import { MantenimientoPanel } from "./mantenimiento-panel";
 import { getApiBaseUrl } from "@/config";
+import { esRolGlobal } from "@/lib/rol-global";
+import { useAuthStore } from "@/stores/authStore";
 import { useCerrarAlPulsarFuera } from "@/hooks/cerrar-al-pulsar-fuera";
 
 export const ConfiguracionForm = () => {
+  const { user } = useAuthStore();
   const [sucursales, setSucursales] = useState<
     Array<{ id: string; nombre: string; codigo?: string | null }>
   >([]);
@@ -478,6 +481,18 @@ export const ConfiguracionForm = () => {
                   "Las dos direcciones con el reparto: lo que se le avisa cuando un pedido ya se puede repartir, y el estado de las entregas que escribe de vuelta.",
                 href: "/panel/sincronizacion/reparto",
               },
+              // Los archivos que n8n manda a PEDIDO y qué pasó con cada uno. Sólo el super
+              // administrador: es la ingesta de todas las sucursales a la vez.
+              ...(esRolGlobal(user?.role)
+                ? [
+                    {
+                      titulo: "Ingesta",
+                      texto:
+                        "Cada archivo que llega de las carpetas del Drive: si entró, si alguna fila falló y por qué lo rechazó PEDIDO (los que n8n deja en «Errores»). Con búsqueda por sucursal, estado y fechas.",
+                      href: "/panel/sincronizacion/ingesta",
+                    },
+                  ]
+                : []),
             ].map((s) => (
               <div
                 key={s.href}
