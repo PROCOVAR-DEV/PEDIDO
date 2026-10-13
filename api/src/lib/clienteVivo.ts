@@ -8,6 +8,9 @@
  *
  * Puro, con la búsqueda inyectada, para poder probarlo sin base de datos.
  */
+import { esConsumoPropio } from './consumoPropio';
+import { esElMismoCliente } from './nombreParecido';
+
 export type FichaConSucesora = { id: string; activo: boolean; sucesorId: string | null };
 
 // Una cadena real es de uno o dos saltos; más es un ciclo o un dato roto, y no se sigue.
@@ -33,4 +36,18 @@ export async function fichaViva<T extends FichaConSucesora>(
   }
 
   return { ficha, anteriores };
+}
+
+/**
+ * ¿La ficha SIN código `a` es el mismo cliente que `g`, que YA lleva el código que trae el archivo?
+ *
+ * Es el cliente que el vendedor creó sin conexión y que Parranda dio de alta con su código: ahora
+ * hay dos fichas. Se unen sólo con nombres equivalentes; si el nombre no se parece, el código
+ * puede ser de los que Parranda reparte a varios clientes (los «OTR») y no se toca.
+ */
+export function sePuedeUnir(
+  a: { nombre: string; codigo: string | null; activo: boolean },
+  g: { nombre: string; activo: boolean },
+): boolean {
+  return a.activo && !a.codigo && g.activo && !esConsumoPropio(a.nombre) && esElMismoCliente(a.nombre, g.nombre);
 }

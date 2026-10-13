@@ -56,3 +56,18 @@ test('un ciclo no se queda dando vueltas', async () => {
   assert.ok(['a', 'b'].includes(r.ficha.id));
   assert.ok(r.anteriores.length <= 1);
 });
+
+import { sePuedeUnir } from '../src/lib/clienteVivo';
+
+test('dos fichas con el mismo código se unen sólo si los nombres son equivalentes', () => {
+  const sinCodigo = (nombre: string) => ({ nombre, codigo: null, activo: true });
+  const conCodigo = (nombre: string) => ({ nombre, activo: true });
+
+  assert.ok(sePuedeUnir(sinCodigo('JOAQUIN AREAS MEJIAS'), conCodigo('CAFETERIA(JOAQUIN AREAS MEJIAS )')));
+  // código repartido a varios clientes: nombres distintos, no se unen
+  assert.ok(!sePuedeUnir(sinCodigo('CLIENTE EVENTUAL KARLA NARANJO PEREZ'), conCodigo('CLIENTE EVENTUAL ONESIMO DURADES GUILLOT')));
+  // la que ya tiene código, la inactiva y el consumo propio no se tocan
+  assert.ok(!sePuedeUnir({ nombre: 'JOAQUIN AREAS MEJIAS', codigo: 'X1', activo: true }, conCodigo('JOAQUIN AREAS MEJIAS')));
+  assert.ok(!sePuedeUnir({ nombre: 'JOAQUIN AREAS MEJIAS', codigo: null, activo: false }, conCodigo('JOAQUIN AREAS MEJIAS')));
+  assert.ok(!sePuedeUnir(sinCodigo('CONSUMO PROPIO FERNANDO'), conCodigo('CAFETERIA FERNANDO')));
+});

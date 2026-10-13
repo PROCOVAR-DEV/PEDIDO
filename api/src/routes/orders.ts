@@ -24,7 +24,7 @@ import { nombreComparable, codigoComparable } from '../lib/nombreVendedor';
 import { parsearFechaConsulta } from '../lib/fechaConsulta';
 import { emitEvent } from '../lib/events';
 import { claveDePedido, clavesDeBorrados, folioBaseDe, reservarFoliosBorrados } from '../lib/pedidoBorrado';
-import { fichaViva } from '../lib/clienteVivo';
+import { fichaViva, sePuedeUnir } from '../lib/clienteVivo';
 import { esElMismoCliente, unicaFichaParecida } from '../lib/nombreParecido';
 import { redisEnabled, publishJSON, getSubscriber, CH_IMPORT_DONE, CH_IMPORT_FAILED } from '../lib/redis';
 import { importQueue } from '../lib/queues';
@@ -2363,7 +2363,7 @@ async function processOrderRecord(
   const nombreCliente = nombreComparable(record.client.nombre);
   const incomingCode = record.client.codigo?.toString().trim() || null;
 
-  const actualizarCliente = async (existente: { id: string; codigo: string | null }) => {
+  const actualizarCliente = async (existente: { id: string; codigo: string | null; direccion?: string | null }) => {
     let canUpdateCode =
       !!incomingCode &&
       (!existente.codigo || existente.codigo.trim() === '' || existente.codigo === incomingCode);
@@ -2382,6 +2382,9 @@ async function processOrderRecord(
         zona: record.client.zona,
         sucursalId,
         codigo: canUpdateCode ? incomingCode : existente.codigo,
+        // La ficha sin dirección la toma del pedido: donde Parranda no manda (Granma, Palma, Moa) es
+        // la única fuente. Nunca pisa una que ya tenga.
+        ...(!existente.direccion?.trim() && record.order.direccion?.trim() ? { direccion: record.order.direccion.trim() } : {}),
       },
     });
   };
@@ -2416,7 +2419,25 @@ async function processOrderRecord(
     });
     fichasDelCliente = [...new Set([client.id, ...sucesion.anteriores, ...previas.map((x) => x.id)])];
   } else if (existingClient) {
-    client = await actualizarCliente(existingClient);
+    // La ficha de este nombre no tiene código y el archivo trae uno que YA lleva otra ficha viva con
+    // un nombre equivalente: son el mismo cliente (el creado sin conexión y el que dio de alta el
+    // supervisor de Parranda). La sin código pasa a inactiva con la otra por sucesora, y el pedido va
+    // a la otra. El historial se queda donde estaba.
+    const gemela =
+      incomingCode && !existingClient.codigo
+        ? await prisma.cliente.findFirst({ where: { sucursalId, codigo: incomingCode, activo: true, id: { not: existingClient.id } } })
+        : null;
+
+    if (gemela && sePuedeUnir(existingClient, gemela)) {
+      await prisma.cliente.update({
+        where: { id: existingClient.id },
+        data: { activo: false, desactivadoAt: new Date(), sucesorId: gemela.id },
+      });
+      client = gemela;
+      fichasDelCliente = [gemela.id, existingClient.id];
+    } else {
+      client = await actualizarCliente(existingClient);
+    }
   } else {
     // Cliente nuevo CON código de Parranda. Los vendedores crean clientes en Retool sin conexión
     // (el archivo trae «NO CREADO») y Parranda los crea después con su código y a veces otro
