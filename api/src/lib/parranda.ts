@@ -376,6 +376,36 @@ export async function processParrandaSync(
 
     r.avisos.push(...d.avisos.slice(0, Math.max(0, 30 - r.avisos.length)));
 
+    // El DETALLE, cliente a cliente, en el mismo «Qué cambió» de la pantalla de Parranda: quién
+    // pasó a inactivo, quién se reactivó y a qué ficha se le pasó cada código. Va ANTES que los
+    // cambios de geolocalización —son lo que importa— y acotado: la primera pasada puede mover
+    // miles, las diarias unos pocos.
+    const porId = new Map(frescos.map((c) => [c.id, c]));
+    const codigoDeSuc = new Map(sucursales.map((x) => [x.id, x.codigo]));
+    const detalle: ParrandaSyncResult['cambios'] = [];
+    const caso = (id: string) => {
+      const c = porId.get(id);
+
+      return { cliente: c?.nombre ?? id, sucursal: (c?.sucursalId && codigoDeSuc.get(c.sucursalId)) || null };
+    };
+
+    for (const m of d.codigosMovidos) {
+      detalle.push({
+        ...caso(m.para),
+        campos: [
+          { campo: 'código', antes: null, despues: m.codigo },
+          { campo: 'ficha anterior (queda inactiva)', antes: porId.get(m.de)?.nombre ?? m.de, despues: null },
+        ],
+      });
+    }
+    for (const id of d.desactivar) {
+      detalle.push({ ...caso(id), campos: [{ campo: 'estado', antes: 'activo', despues: 'inactivo: Parranda ya no lo manda' }] });
+    }
+    for (const id of d.reactivar) {
+      detalle.push({ ...caso(id), campos: [{ campo: 'estado', antes: 'inactivo', despues: 'activo: Parranda lo volvió a mandar' }] });
+    }
+    r.cambios = [...detalle.slice(0, 500), ...r.cambios];
+
     // El código de la ficha vieja pasa a la viva: primero se libera, porque (sucursal, código)
     // es único.
     for (const m of d.codigosMovidos) {
