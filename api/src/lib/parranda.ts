@@ -165,8 +165,12 @@ export async function processParrandaSync(
   });
   type Actual = (typeof existentes)[number];
   const porClave = new Map<string, Actual>();
+  const porId = new Map<string, Actual>();
 
-  for (const c of existentes) if (c.sucursalId) porClave.set(`${c.sucursalId}|${norm(c.nombre)}`, c);
+  for (const c of existentes) {
+    porId.set(c.id, c);
+    if (c.sucursalId) porClave.set(`${c.sucursalId}|${norm(c.nombre)}`, c);
+  }
 
   // Quién tiene ya cada código, por sucursal.
   //
@@ -248,7 +252,11 @@ export async function processParrandaSync(
         };
 
         const key = `${sucursalId}|${norm(nombre)}`;
-        const actual = porClave.get(key);
+        // Sin ficha por NOMBRE pero con una que YA lleva este código: es el mismo cliente con el
+        // nombre escrito distinto («Mi8 Tatiana Hurtado» / «TATIANA HURTADO»). El código es exacto,
+        // no se adivina nada. Sin esto esas fichas no recibían nunca su dirección ni su geo.
+        const idDelCodigo = geoData.codigo ? porCodigo.get(`${sucursalId}|${geoData.codigo}`) : undefined;
+        const actual = porClave.get(key) ?? (idDelCodigo ? porId.get(idDelCodigo) : undefined);
 
         if (actual) {
           // Solo se escribe si algo CAMBIO de verdad. Las coordenadas se comparan
@@ -334,7 +342,9 @@ export async function processParrandaSync(
             // orden cambia entre pasadas el valor guardado va y viene, y en la
             // siguiente "cambia" otra vez. Eso es lo que hacía que el número subiera
             // solo —5703, 5913, 6127, 6602— sin que nadie tocara nada.
-            porClave.set(key, { ...actual, ...geoData });
+            const foto = { ...actual, ...geoData };
+            porClave.set(`${sucursalId}|${norm(actual.nombre)}`, foto);
+            porId.set(actual.id, foto);
             // El código recién escrito pasa a estar ocupado por este cliente: si más
             // abajo llega otro con el mismo, se ve el choque igual que si viniera de
             // la base.
