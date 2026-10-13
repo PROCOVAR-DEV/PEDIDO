@@ -30,6 +30,8 @@ export interface Cliente {
   /** Quién puso la ubicación: "apk" si la corrigió un repartidor, si no la de Parranda. */
   geoFuente?: string | null;
   geoAt?: string | null;
+  /** Falso cuando Parranda ya no lo manda. Sus pedidos viejos siguen estando. */
+  activo?: boolean;
   updatedAt?: string | null;
   vendedorNombre?: string | null;
   vendedorCodigo?: string | null;

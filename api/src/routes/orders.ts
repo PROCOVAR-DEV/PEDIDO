@@ -24,6 +24,8 @@ import { nombreComparable, codigoComparable } from '../lib/nombreVendedor';
 import { parsearFechaConsulta } from '../lib/fechaConsulta';
 import { emitEvent } from '../lib/events';
 import { claveDePedido, clavesDeBorrados, folioBaseDe, reservarFoliosBorrados } from '../lib/pedidoBorrado';
+import { fichaViva, sePuedeUnir } from '../lib/clienteVivo';
+import { esElMismoCliente, unicaFichaParecida } from '../lib/nombreParecido';
 import { redisEnabled, publishJSON, getSubscriber, CH_IMPORT_DONE, CH_IMPORT_FAILED } from '../lib/redis';
 import { importQueue } from '../lib/queues';
 import { anotarEnCurso, anotarHecha, borrarEnCurso, leerEnCurso, leerHechas } from '../lib/importEnCurso';
@@ -1418,6 +1420,7 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
         estado: outcome.results.failed > 0 ? 'con_problemas' : 'entro', estadoHttp: 200,
         filas: records.length, creados: outcome.results.created, actualizados: outcome.results.updated,
         fallidos: outcome.results.failed, omitidos: outcome.results.omitidos ?? 0,
+        congelados: outcome.results.congelados,
         motivo: outcome.results.failed > 0 ? `${outcome.results.failed} fila(s) con problema` : null,
         ms: Date.now() - base.desdeAt,
       });
@@ -1976,6 +1979,8 @@ export type BulkImportResults = {
   /// `failed`: no es un fallo del archivo, es una decisión que alguien tomó.
   omitidos: number;
   omitidosDetalle: { folio: string; cliente: string }[];
+  /** Pedidos ya completados que el archivo volvió a traer: no se tocan. */
+  congelados: number;
 };
 export type BulkImportOutcome = {
   ok: boolean;
@@ -2146,7 +2151,7 @@ export async function processBulkImport(
     }
   }
 
-  const results: BulkImportResults = { created: 0, updated: 0, lineas: 0, failed: 0, sinAsignar: 0, errors: [], omitidos: 0, omitidosDetalle: [] };
+  const results: BulkImportResults = { created: 0, updated: 0, lineas: 0, failed: 0, sinAsignar: 0, errors: [], omitidos: 0, omitidosDetalle: [], congelados: 0 };
   // Los ids, para contar PEDIDOS y no renglones. Ver `BulkImportResults`.
   const idsCreados = new Set<string>();
   const idsActualizados = new Set<string>();
@@ -2358,10 +2363,17 @@ async function processOrderRecord(
   const nombreCliente = nombreComparable(record.client.nombre);
   const incomingCode = record.client.codigo?.toString().trim() || null;
 
-  const actualizarCliente = (existente: { id: string; codigo: string | null }) => {
-    const canUpdateCode =
+  const actualizarCliente = async (existente: { id: string; codigo: string | null; direccion?: string | null }) => {
+    let canUpdateCode =
       !!incomingCode &&
       (!existente.codigo || existente.codigo.trim() === '' || existente.codigo === incomingCode);
+
+    // `(sucursal, código)` es único: si el código del archivo ya es de OTRA ficha, ésta se queda
+    // como está en vez de reventar el pedido con un P2002.
+    if (canUpdateCode && incomingCode && existente.codigo !== incomingCode) {
+      const dueno = await prisma.cliente.findFirst({ where: { sucursalId, codigo: incomingCode }, select: { id: true } });
+      if (dueno && dueno.id !== existente.id) canUpdateCode = false;
+    }
 
     return prisma.cliente.update({
       where: { id: existente.id },
@@ -2370,6 +2382,9 @@ async function processOrderRecord(
         zona: record.client.zona,
         sucursalId,
         codigo: canUpdateCode ? incomingCode : existente.codigo,
+        // La ficha sin dirección la toma del pedido: donde Parranda no manda (Granma, Palma, Moa) es
+        // la única fuente. Nunca pisa una que ya tenga.
+        ...(!existente.direccion?.trim() && record.order.direccion?.trim() ? { direccion: record.order.direccion.trim() } : {}),
       },
     });
   };
@@ -2380,22 +2395,86 @@ async function processOrderRecord(
   // Ese P2002 NO es un error: significa que otro lo creó primero, así que se relee.
   // Sin esto el cliente se duplicaba y el pedido salía con folio -1, -2, -3...
   let client;
+  // Los ids de TODAS las fichas de este mismo cliente: la suya y las viejas que apuntan a ella.
+  // Con una sola ficha es [client.id], como siempre.
+  let fichasDelCliente: string[] = [];
   const existingClient = await prisma.cliente.findFirst({
     where: { nombre: nombreCliente, sucursalId },
   });
 
-  if (existingClient) {
-    client = await actualizarCliente(existingClient);
-  } else {
-    try {
-      client = await prisma.cliente.create({
-        data: {
-          codigo: incomingCode,
-          nombre: nombreCliente,
-          zona: record.client.zona,
-          sucursalId,
-        },
+  // El nombre es el de una ficha INACTIVA con sucesora: Parranda renombró al cliente o le dio
+  // ficha nueva, y los archivos siguen trayendo el nombre viejo. El pedido va a la ficha viva;
+  // colgado de la vieja no lo vería el reparto ni el catálogo. A la vieja no se la toca (ni se
+  // renombra la viva con el nombre viejo: chocaría con el índice único).
+  const sucesion =
+    existingClient && !existingClient.activo && existingClient.sucesorId
+      ? await fichaViva(existingClient, (id) => prisma.cliente.findUnique({ where: { id } }))
+      : null;
+
+  if (existingClient && sucesion && sucesion.ficha.id !== existingClient.id) {
+    client = sucesion.ficha;
+    const previas = await prisma.cliente.findMany({
+      where: { sucesorId: { in: [client.id, ...sucesion.anteriores] } },
+      select: { id: true },
+    });
+    fichasDelCliente = [...new Set([client.id, ...sucesion.anteriores, ...previas.map((x) => x.id)])];
+  } else if (existingClient) {
+    // La ficha de este nombre no tiene código y el archivo trae uno que YA lleva otra ficha viva con
+    // un nombre equivalente: son el mismo cliente (el creado sin conexión y el que dio de alta el
+    // supervisor de Parranda). La sin código pasa a inactiva con la otra por sucesora, y el pedido va
+    // a la otra. El historial se queda donde estaba.
+    const gemela =
+      incomingCode && !existingClient.codigo
+        ? await prisma.cliente.findFirst({ where: { sucursalId, codigo: incomingCode, activo: true, id: { not: existingClient.id } } })
+        : null;
+
+    if (gemela && sePuedeUnir(existingClient, gemela)) {
+      await prisma.cliente.update({
+        where: { id: existingClient.id },
+        data: { activo: false, desactivadoAt: new Date(), sucesorId: gemela.id },
       });
+      client = gemela;
+      fichasDelCliente = [gemela.id, existingClient.id];
+    } else {
+      client = await actualizarCliente(existingClient);
+    }
+  } else {
+    // Cliente nuevo CON código de Parranda. Los vendedores crean clientes en Retool sin conexión
+    // (el archivo trae «NO CREADO») y Parranda los crea después con su código y a veces otro
+    // nombre: el mismo cliente, que sin esto acababa con DOS fichas. Si hay UNA ficha sin código
+    // de esta sucursal con un nombre equivalente, es ésa: toma el código y el nombre de Parranda.
+    let adoptada = null;
+    if (incomingCode) {
+      try {
+        const sinCodigo = await prisma.cliente.findMany({
+          where: { sucursalId, activo: true, codigo: null },
+          select: { id: true, nombre: true },
+        });
+        const parecida = unicaFichaParecida(nombreCliente, sinCodigo.filter((f) => !esConsumoPropio(f.nombre)));
+        if (parecida) {
+          adoptada = await prisma.cliente.update({
+            where: { id: parecida.id },
+            data: { nombre: nombreCliente, codigo: incomingCode, zona: record.client.zona },
+          });
+        }
+      } catch {
+        adoptada = null; // otro pedido del mismo archivo se adelantó (P2002): se sigue por el camino de siempre
+      }
+    }
+
+    try {
+      if (adoptada) {
+        client = adoptada;
+      } else {
+        client = await prisma.cliente.create({
+          data: {
+            codigo: incomingCode,
+            nombre: nombreCliente,
+            zona: record.client.zona,
+            sucursalId,
+          },
+        });
+      }
     } catch (error) {
       if (
         !(error instanceof Prisma.PrismaClientKnownRequestError) ||
@@ -2409,11 +2488,23 @@ async function processOrderRecord(
         where: { nombre: nombreCliente, sucursalId },
       });
 
+      // Nombre nuevo pero código que ya es de otra ficha: si el nombre es equivalente es el mismo
+      // cliente de Parranda escrito de otra manera, y el pedido va a esa ficha, no a un duplicado
+      // sin código. Si NO se parece, el código es de los que Parranda reparte a varios clientes
+      // (los «OTR», p. ej.): se crea la ficha como siempre, sin código, y el sync decide después.
+      const delCodigoCrudo =
+        !ganador && incomingCode
+          ? await prisma.cliente.findFirst({ where: { sucursalId, codigo: incomingCode } })
+          : null;
+      const delCodigo = delCodigoCrudo && esElMismoCliente(nombreCliente, delCodigoCrudo.nombre) ? delCodigoCrudo : null;
+
       if (ganador) {
         client = await actualizarCliente(ganador);
+      } else if (delCodigo) {
+        client = delCodigo;
       } else {
-        // No fue el nombre: el choque vino del codigo repetido en el CSV de origen
-        // (unico por sucursal+codigo). Se crea sin codigo para no tumbar la importación.
+        // No fue el nombre ni un código ya conocido: el choque vino del codigo repetido en el CSV
+        // de origen. Se crea sin codigo para no tumbar la importación.
         client = await prisma.cliente.create({
           data: {
             nombre: nombreCliente,
@@ -2428,7 +2519,10 @@ async function processOrderRecord(
   // El folio sin nuestro sufijo `-1`/`-2`. El número del folio (cuatro cifras) no se toca.
   const baseFolio = folioBaseDe(record.order.folio);
 
-  // Check if order already exists for THIS client (with base folio or any suffix)
+  if (fichasDelCliente.length === 0) fichasDelCliente = [client.id];
+
+  // Check if order already exists for THIS client (with base folio or any suffix). Si el cliente
+  // tiene fichas viejas, el pedido ya cargado puede estar colgado de cualquiera de ellas.
   const existingOrder = await prisma.pedido.findFirst({
     where: {
       sucursalId,
@@ -2437,7 +2531,7 @@ async function processOrderRecord(
         { folio: { startsWith: `${baseFolio}-` } },
       ],
       vendedorId: seller.id,
-      clienteId: client.id,
+      clienteId: { in: fichasDelCliente },
     },
     include: {
       items: true,
@@ -2452,12 +2546,20 @@ async function processOrderRecord(
    * seguir actualizándolo como siempre — si no, el pedido se quedaría congelado sin que
    * nadie entienda por qué.
    */
-  if (!existingOrder && borrados.has(claveDePedido(sucursalId, record.order.folio, seller.id, client.id))) {
+  if (!existingOrder && fichasDelCliente.some((id) => borrados.has(claveDePedido(sucursalId, record.order.folio, seller.id, id)))) {
     results.omitidos = (results.omitidos ?? 0) + 1;
     if (Array.isArray(results.omitidosDetalle) && results.omitidosDetalle.length < 50) {
       results.omitidosDetalle.push({ folio: baseFolio, cliente: client.nombre ?? '' });
     }
 
+    return;
+  }
+
+  // Un pedido COMPLETADO ya no cambia. El gestor puede volver a subir el archivo para
+  // actualizarlo, pero se queda como estaba cuando se completó: ni cantidades, ni líneas nuevas,
+  // ni fechas, ni cobro. Se cuenta aparte para que se vea por qué lo que subió no entró.
+  if (existingOrder?.estado === 'completada') {
+    results.congelados = (results.congelados ?? 0) + 1;
     return;
   }
 
@@ -2477,7 +2579,7 @@ async function processOrderRecord(
     });
     
     // Check if base folio is taken by another client
-    const baseFolioTaken = existingFolios.some(o => o.folio === baseFolio && o.clienteId !== client.id);
+    const baseFolioTaken = existingFolios.some(o => o.folio === baseFolio && !(o.clienteId && fichasDelCliente.includes(o.clienteId)));
     
     if (baseFolioTaken || existingFolios.length > 0) {
       // Find the next available suffix
@@ -2627,6 +2729,13 @@ async function processOrderRecord(
 
     tocados?.add(creado.id);
     creados?.add(creado.id);
+
+    // Entró un pedido NUEVO: el cliente está en uso, aunque Parranda ya no lo mande. Se reactiva
+    // (y el sync de la tarde no lo vuelve a apagar mientras tenga pedidos de los últimos 30 días).
+    // Sólo con un pedido nuevo: un archivo que reenvía pedidos viejos no resucita a nadie.
+    if (!client.activo) {
+      await prisma.cliente.update({ where: { id: client.id }, data: { activo: true, desactivadoAt: null } });
+    }
   }
 }
 

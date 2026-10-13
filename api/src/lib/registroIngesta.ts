@@ -18,6 +18,7 @@ export type RegistroIngesta = {
   actualizados?: number;
   fallidos?: number;
   omitidos?: number;
+  congelados?: number;
   motivo?: string | null;
   ms?: number | null;
 };
@@ -29,7 +30,7 @@ export async function anotarImportacion(r: RegistroIngesta): Promise<void> {
         archivo: r.archivo, sucursalId: r.sucursalId, fuente: r.fuente, origen: r.origen,
         estado: r.estado, estadoHttp: r.estadoHttp, filas: r.filas,
         creados: r.creados ?? 0, actualizados: r.actualizados ?? 0, fallidos: r.fallidos ?? 0,
-        omitidos: r.omitidos ?? 0, motivo: r.motivo ? r.motivo.slice(0, 500) : null, ms: r.ms ?? null,
+        omitidos: r.omitidos ?? 0, congelados: r.congelados ?? 0, motivo: r.motivo ? r.motivo.slice(0, 500) : null, ms: r.ms ?? null,
       },
     });
   } catch (e) {
