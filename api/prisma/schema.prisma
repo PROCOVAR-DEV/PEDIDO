@@ -486,6 +486,10 @@ model Cliente {
   /// PEDIDO entrega al reparto; sus pedidos antiguos siguen estando.
   activo         Boolean   @default(true)
   desactivadoAt  DateTime?
+  /// Si este cliente es una ficha VIEJA de otro —Parranda lo renombró («V3») o le dio ficha nueva
+  /// conservando el código—, el `id` de la ficha viva. Distingue «el mismo cliente con ficha nueva»
+  /// de «un cliente que Parranda dejó de mandar» (sin sucesor).
+  sucesorId      String?
 
   /**
    * El teléfono del cliente. Hasta ahora sólo vivía en el PEDIDO.

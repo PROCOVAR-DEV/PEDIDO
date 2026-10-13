@@ -411,7 +411,7 @@ export async function processParrandaSync(
     for (const m of d.codigosMovidos) {
       try {
         await prisma.$transaction([
-          prisma.cliente.update({ where: { id: m.de }, data: { codigo: null } }),
+          prisma.cliente.update({ where: { id: m.de }, data: { codigo: null, sucesorId: m.para } }),
           prisma.cliente.update({ where: { id: m.para }, data: { codigo: m.codigo } }),
         ]);
         r.codigosMovidos++;
@@ -430,7 +430,7 @@ export async function processParrandaSync(
 
     for (let i = 0; i < d.reactivar.length; i += 500) {
       const lote = d.reactivar.slice(i, i + 500);
-      const x = await prisma.cliente.updateMany({ where: { id: { in: lote }, activo: false }, data: { activo: true, desactivadoAt: null } });
+      const x = await prisma.cliente.updateMany({ where: { id: { in: lote }, activo: false }, data: { activo: true, desactivadoAt: null, sucesorId: null } });
 
       r.reactivados += x.count;
     }

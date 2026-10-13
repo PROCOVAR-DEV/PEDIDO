@@ -834,6 +834,9 @@ router.get('/clients', async (req, res) => {
     tipoCliente: c.tipoCliente,
     estadoCompra: c.estadoCompra,
     activo: c.activo,
+    // Si es una ficha VIEJA de otro cliente (Parranda lo renombró o le dio ficha nueva), el id de
+    // la ficha viva. Nulo si no tiene sustituto.
+    sucesorId: c.sucesorId,
     latitud: c.latitud,
     longitud: c.longitud,
     geolocalizacion: c.geolocalizacion,

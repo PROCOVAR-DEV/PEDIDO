@@ -6,3 +6,6 @@
 ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "activo" BOOLEAN NOT NULL DEFAULT true;
 ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "desactivadoAt" TIMESTAMP(3);
 CREATE INDEX IF NOT EXISTS "Client_activo_idx" ON "Client"("activo");
+
+-- La ficha viva que sustituye a esta (mismo cliente, ficha nueva). Nulo si nadie la sustituye.
+ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "sucesorId" TEXT;
