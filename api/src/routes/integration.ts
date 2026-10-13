@@ -22,6 +22,7 @@ import { pedidoParaLista } from './orders';
 import { ventasDeSucursal, databases } from '../lib/ventra';
 import { folioDeLaNota } from '../lib/emparejarFactura';
 import { estadoDePedidosCrm, leerPedidoCrm, posiblesDuplicados, recibirPedidoCrm } from '../lib/pedidoDesdeCrm';
+import { dispararComoLaIngesta } from '../lib/pedidoDesdeCrm';
 
 const router = Router();
 router.use(serviceAuth);
@@ -1287,6 +1288,7 @@ router.post('/crm/pedidos', async (req, res) => {
         accion: 'create',
         datos: await pedidoParaLista(r.cuerpo.pedidoId),
       });
+      dispararComoLaIngesta({ id: r.cuerpo.pedidoId, sucursalId: p?.sucursalId ?? null });
     }
     res.status(r.status).json(r.cuerpo);
   } catch (e) {
