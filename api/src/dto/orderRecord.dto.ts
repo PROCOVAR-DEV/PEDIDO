@@ -1,4 +1,5 @@
 import { codigoDesdeNombre } from '../lib/nombreVendedor';
+import { codigoDeCliente } from '../lib/codigoCliente';
 import { convencionDeFechas, leerFecha, type Convencion } from '../lib/fechaDelCsv';
 
 // DTO for seller data
@@ -81,14 +82,9 @@ export function mapCsvToOrderRecord(csvRecord: any, convencion: Convencion = 'is
     },
     client: {
       nombre: clienteNombre,
-      // Accept multiple possible CSV headers for the client code.
-      // Only treat it as valid if it is purely numeric; otherwise use null.
-      codigo: (() => {
-        const raw = csvRecord.codigo_cliente || csvRecord.codigoCliente || csvRecord.clienteId || csvRecord.cliente_id;
-        if (!raw) return null;
-        const str = String(raw).trim();
-        return /^\d+$/.test(str) ? str : null;
-      })(),
+      // Accept multiple possible CSV headers for the client code. Ver `codigoDeCliente`: el de
+      // Parranda y el numérico valen; «NO CREADO» y lo demás, null.
+      codigo: codigoDeCliente(csvRecord.codigo_cliente || csvRecord.codigoCliente || csvRecord.clienteId || csvRecord.cliente_id),
       zona: csvRecord.zona || csvRecord.Zona || null,
     },
     order: {

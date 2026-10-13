@@ -2359,10 +2359,17 @@ async function processOrderRecord(
   const nombreCliente = nombreComparable(record.client.nombre);
   const incomingCode = record.client.codigo?.toString().trim() || null;
 
-  const actualizarCliente = (existente: { id: string; codigo: string | null }) => {
-    const canUpdateCode =
+  const actualizarCliente = async (existente: { id: string; codigo: string | null }) => {
+    let canUpdateCode =
       !!incomingCode &&
       (!existente.codigo || existente.codigo.trim() === '' || existente.codigo === incomingCode);
+
+    // `(sucursal, código)` es único: si el código del archivo ya es de OTRA ficha, ésta se queda
+    // como está en vez de reventar el pedido con un P2002.
+    if (canUpdateCode && incomingCode && existente.codigo !== incomingCode) {
+      const dueno = await prisma.cliente.findFirst({ where: { sucursalId, codigo: incomingCode }, select: { id: true } });
+      if (dueno && dueno.id !== existente.id) canUpdateCode = false;
+    }
 
     return prisma.cliente.update({
       where: { id: existente.id },
@@ -2429,11 +2436,20 @@ async function processOrderRecord(
         where: { nombre: nombreCliente, sucursalId },
       });
 
+      // Nombre nuevo pero código que ya es de otra ficha: es el mismo cliente de Parranda con el
+      // nombre escrito de otra manera. El pedido va a esa ficha, no a un duplicado sin código.
+      const delCodigo =
+        !ganador && incomingCode
+          ? await prisma.cliente.findFirst({ where: { sucursalId, codigo: incomingCode } })
+          : null;
+
       if (ganador) {
         client = await actualizarCliente(ganador);
+      } else if (delCodigo) {
+        client = delCodigo;
       } else {
-        // No fue el nombre: el choque vino del codigo repetido en el CSV de origen
-        // (unico por sucursal+codigo). Se crea sin codigo para no tumbar la importación.
+        // No fue el nombre ni un código ya conocido: el choque vino del codigo repetido en el CSV
+        // de origen. Se crea sin codigo para no tumbar la importación.
         client = await prisma.cliente.create({
           data: {
             nombre: nombreCliente,
