@@ -5,6 +5,7 @@
 import prisma from '../prismaClient';
 import { emitEvent } from './events';
 import { decidirActivos, type FilaDeParranda } from './clientesActivos';
+import { filasGanadoras } from './parrandaFilas';
 
 const PARRANDA_URL = process.env.PARRANDA_API_URL || 'https://ccsa.retool.com/url/procovar';
 const PARRANDA_KEY = process.env.PARRANDA_API_KEY || ''; // SECRETO: solo por env (nunca en repo)
@@ -94,6 +95,8 @@ export interface ParrandaSyncResult {
   actualizados: number;
   /** Encontrados en Parranda pero SIN nada que cambiar. */
   sinCambios: number;
+  /** Filas de Parranda que caen en una ficha a la que ya se aplicó OTRA fila (nombres o códigos repetidos). */
+  repetidas: number;
   conGeo: number;
   sinGeo: number;
   sinSucursal: number;
@@ -214,168 +217,188 @@ export async function processParrandaSync(
   }
 
   const r: ParrandaSyncResult = {
-    paginas: 0, total: 0, creados: 0, actualizados: 0, sinCambios: 0, conGeo: 0, sinGeo: 0, sinSucursal: 0, errores: 0,
+    paginas: 0, total: 0, creados: 0, actualizados: 0, sinCambios: 0, repetidas: 0, conGeo: 0, sinGeo: 0, sinSucursal: 0, errores: 0,
     erroresDetalle: [], cambios: [], choquesDeCodigo: 0, prefijosAjenos: 0, avisos: [],
     desactivados: 0, reactivados: 0, codigosMovidos: 0,
   };
   // Lo que Parranda mandó en esta pasada, para decidir al final quién ya no está.
   const delFeed: FilaDeParranda[] = [];
 
-  let offset = 0;
-  for (;;) {
+  // 1) TODO el feed, página a página. Si Parranda falla a mitad, la excepción sale antes de
+  // escribir nada: ni se cambia una ficha ni se desactiva a nadie por una pasada cortada.
+  const crudo: ParrandaCliente[] = [];
+  for (let offset = 0; ; offset += PAGE) {
     const data = await fetchParrandaPage(offset);
     if (!data.length) break;
     r.paginas++;
-
-    for (const c of data) {
-      r.total++;
-      try {
-        const code = PROV_TO_CODE[norm(c.provincia)];
-        const sucursalId = code ? idByCode.get(code) ?? null : null;
-        if (!sucursalId) { r.sinSucursal++; continue; }
-
-        const nombre = String(c.cliente ?? '').toUpperCase().trim();
-        if (!nombre) { r.errores++; continue; }
-
-        delFeed.push({ sucursalId, nombre, codigo: c.codigo ? String(c.codigo).trim() : null });
-
-        const { lat, lng } = parseGeo(c.geolocalizacion);
-        if (lat != null && lng != null) r.conGeo++; else r.sinGeo++;
-
-        const geoData = {
-          codigo: c.codigo ? String(c.codigo).trim() : null,
-          direccion: c.direccion_cliente ? String(c.direccion_cliente).trim() : null,
-          municipio: c.municipio ? String(c.municipio).trim() : null,
-          latitud: lat,
-          longitud: lng,
-          geolocalizacion: typeof c.geolocalizacion === 'string' ? c.geolocalizacion : null,
-        };
-
-        const key = `${sucursalId}|${norm(nombre)}`;
-        // Sin ficha por NOMBRE pero con una que YA lleva este código: es el mismo cliente con el
-        // nombre escrito distinto («Mi8 Tatiana Hurtado» / «TATIANA HURTADO»). El código es exacto,
-        // no se adivina nada. Sin esto esas fichas no recibían nunca su dirección ni su geo.
-        const idDelCodigo = geoData.codigo ? porCodigo.get(`${sucursalId}|${geoData.codigo}`) : undefined;
-        const actual = porClave.get(key) ?? (idDelCodigo ? porId.get(idDelCodigo) : undefined);
-
-        if (actual) {
-          // Solo se escribe si algo CAMBIO de verdad. Las coordenadas se comparan
-          // con margen: son decimales y una diferencia en el ultimo digito no es
-          // un cambio real, pero bastaria para escribir las 6127 filas otra vez.
-          // Qué campos cambian, uno a uno, en vez de un sí/no. Es lo que hay que
-          // poder MIRAR: "198 cambiaron" no se puede ni creer ni desmentir, y "198
-          // cambiaron el municipio de Camagüey a CAMAGÜEY" se arregla en cinco
-          // minutos.
-          const campos: Array<{ campo: string; antes: string | null; despues: string | null }> = [];
-          const anota = (campo: string, antes: unknown, despues: unknown) => {
-            campos.push({
-              campo,
-              antes: antes == null ? null : String(antes),
-              despues: despues == null ? null : String(despues),
-            });
-          };
-
-          if ((geoData.codigo ?? null) !== (actual.codigo ?? null)) anota('código', actual.codigo, geoData.codigo);
-          if ((geoData.direccion ?? null) !== (actual.direccion ?? null)) anota('dirección', actual.direccion, geoData.direccion);
-          if ((geoData.municipio ?? null) !== (actual.municipio ?? null)) anota('municipio', actual.municipio, geoData.municipio);
-          if ((geoData.geolocalizacion ?? null) !== (actual.geolocalizacion ?? null)) anota('geolocalización', actual.geolocalizacion, geoData.geolocalizacion);
-          if (!mismoNumero(geoData.latitud, actual.latitud)) anota('latitud', actual.latitud, geoData.latitud);
-          if (!mismoNumero(geoData.longitud, actual.longitud)) anota('longitud', actual.longitud, geoData.longitud);
-
-          // ¿El código que viene lo tiene ya otro cliente de esta sucursal?
-          const dueñoDelCodigo = geoData.codigo
-            ? porCodigo.get(`${sucursalId}|${geoData.codigo}`)
-            : undefined;
-          const codigoOcupado = dueñoDelCodigo != null && dueñoDelCodigo !== actual.id;
-
-          // ¿Viene con el prefijo de otra sucursal? Se anota y se sigue: el dato es
-          // válido igualmente, pero es la prueba de que en el origen están asignando
-          // códigos que no corresponden.
-          const preEsperado = prefijoDe.get(sucursalId);
-          const preRecibido = geoData.codigo?.slice(0, 2).toUpperCase();
-          if (preEsperado && preRecibido && preEsperado !== preRecibido) {
-            r.prefijosAjenos++;
-            if (r.avisos.length < 30) {
-              r.avisos.push(
-                `${nombre} (${code}): el código ${geoData.codigo} empieza por ${preRecibido}, ` +
-                  `y en ${code} todos los demás empiezan por ${preEsperado}`,
-              );
-            }
-          }
-
-          if (codigoOcupado) {
-            // Se escribe todo menos el código, y se deja dicho quién lo tiene: eso es
-            // lo que hay que arreglar en el origen, y sin el nombre del otro cliente
-            // no hay por dónde empezar.
-            geoData.codigo = actual.codigo ?? null;
-            const i = campos.findIndex((f) => f.campo === 'código');
-            if (i >= 0) campos.splice(i, 1);
-
-            r.choquesDeCodigo++;
-            if (r.avisos.length < 30) {
-              const otro = nombrePorId.get(dueñoDelCodigo!) ?? 'otro cliente';
-              r.avisos.push(
-                `${nombre} (${code}): Parranda le manda el código ${String(c.codigo).trim()}, ` +
-                  `que en esa misma sucursal ya lo tiene ${otro}. Se guardó el resto sin tocar su código.`,
-              );
-            }
-          }
-
-          const cambio = campos.length > 0;
-
-          if (cambio) {
-            if (r.cambios.length < 200) {
-              r.cambios.push({ cliente: nombre, sucursal: code ?? null, campos });
-            }
-            await prisma.cliente.update({ where: { id: actual.id }, data: geoData });
-            r.actualizados++;
-
-            // Y la foto se actualiza con lo que se acaba de escribir.
-            //
-            // Sin esto, el mismo cliente repetido en el origen se comparaba SIEMPRE
-            // contra el valor que tenía antes de empezar: la segunda aparición veía
-            // una diferencia que ya se había escrito y volvía a escribir. Parranda
-            // manda 12.049 filas para 8.850 clientes, o sea que repetir es lo normal,
-            // no la excepción.
-            //
-            // Y no era solo contar de más: gana la última aparición, así que si el
-            // orden cambia entre pasadas el valor guardado va y viene, y en la
-            // siguiente "cambia" otra vez. Eso es lo que hacía que el número subiera
-            // solo —5703, 5913, 6127, 6602— sin que nadie tocara nada.
-            const foto = { ...actual, ...geoData };
-            porClave.set(`${sucursalId}|${norm(actual.nombre)}`, foto);
-            porId.set(actual.id, foto);
-            // El código recién escrito pasa a estar ocupado por este cliente: si más
-            // abajo llega otro con el mismo, se ve el choque igual que si viniera de
-            // la base.
-            if (geoData.codigo) porCodigo.set(`${sucursalId}|${geoData.codigo}`, actual.id);
-          } else {
-            r.sinCambios++;
-          }
-        } else {
-          // Parranda SOLO enriquece a MIS clientes (los que vienen de los pedidos). Un cliente
-          // de Parranda que NO existe aquí se OMITE: no se importa el catálogo entero de Parranda.
-          r.creados = 0;
-        }
-      } catch (e) {
-        // P2002 (codigo/nombre duplicado) u otro: no tumbar el sync, contar y seguir.
-        //
-        // Pero se guardan los primeros motivos. "114 err" a secas no se puede
-        // arreglar: no dice si son 114 veces lo mismo o 114 cosas distintas, y sin
-        // eso nadie sabe por dónde empezar.
-        r.errores++;
-        if (r.erroresDetalle.length < 5) {
-          const msg = (e as Error)?.message ?? String(e);
-          if (!r.erroresDetalle.includes(msg)) r.erroresDetalle.push(msg);
-        }
-      }
-    }
-
-    onProgress?.(r);
-    offset += PAGE;
+    crudo.push(...data);
     if (data.length < PAGE) break; // última página
     await new Promise((res) => setTimeout(res, PAUSA_MS)); // pausa anti-ban
   }
+
+  // 2) A qué ficha cae cada fila, y cuál se APLICA cuando varias caen en la misma. Parranda manda
+  // nombres y códigos repetidos con datos distintos; escribir cada fila según llega dejaba la
+  // ficha oscilando (la primera la cambiaba, la segunda la devolvía) y en cada pasada salían como
+  // «cambios» las mismas fichas de siempre.
+  const filas = crudo.map((c) => {
+    const code = PROV_TO_CODE[norm(c.provincia)];
+    const sucursalId = code ? idByCode.get(code) ?? null : null;
+    const nombre = String(c.cliente ?? '').toUpperCase().trim();
+
+    return { c, code, sucursalId, nombre, codigo: c.codigo ? String(c.codigo).trim() : null };
+  });
+  const aplica = filasGanadoras(filas, (f) => {
+    if (!f.sucursalId || !f.nombre) return undefined;
+    const duenoId = f.codigo ? porCodigo.get(`${f.sucursalId}|${f.codigo}`) : undefined;
+
+    return porClave.get(`${f.sucursalId}|${norm(f.nombre)}`) ?? (duenoId ? porId.get(duenoId) : undefined);
+  });
+
+  // 3) Se escribe UNA fila por ficha.
+  for (const [i, { c, code, sucursalId, nombre }] of filas.entries()) {
+    if (i > 0 && i % PAGE === 0) onProgress?.(r);
+    r.total++;
+    try {
+      if (!sucursalId) { r.sinSucursal++; continue; }
+      if (!nombre) { r.errores++; continue; }
+
+      delFeed.push({ sucursalId, nombre, codigo: c.codigo ? String(c.codigo).trim() : null });
+
+      const { lat, lng } = parseGeo(c.geolocalizacion);
+      if (lat != null && lng != null) r.conGeo++; else r.sinGeo++;
+
+      const geoData = {
+        codigo: c.codigo ? String(c.codigo).trim() : null,
+        direccion: c.direccion_cliente ? String(c.direccion_cliente).trim() : null,
+        municipio: c.municipio ? String(c.municipio).trim() : null,
+        latitud: lat,
+        longitud: lng,
+        geolocalizacion: typeof c.geolocalizacion === 'string' ? c.geolocalizacion : null,
+      };
+
+      const key = `${sucursalId}|${norm(nombre)}`;
+      // Sin ficha por NOMBRE pero con una que YA lleva este código: es el mismo cliente con el
+      // nombre escrito distinto («Mi8 Tatiana Hurtado» / «TATIANA HURTADO»). El código es exacto,
+      // no se adivina nada. Sin esto esas fichas no recibían nunca su dirección ni su geo.
+      const idDelCodigo = geoData.codigo ? porCodigo.get(`${sucursalId}|${geoData.codigo}`) : undefined;
+      const actual = porClave.get(key) ?? (idDelCodigo ? porId.get(idDelCodigo) : undefined);
+
+      // Otra fila de Parranda cae en esta misma ficha y es la que se aplica: ésta no se escribe.
+      if (actual && !aplica.has(i)) { r.repetidas++; continue; }
+
+      if (actual) {
+        // Solo se escribe si algo CAMBIO de verdad. Las coordenadas se comparan
+        // con margen: son decimales y una diferencia en el ultimo digito no es
+        // un cambio real, pero bastaria para escribir las 6127 filas otra vez.
+        // Qué campos cambian, uno a uno, en vez de un sí/no. Es lo que hay que
+        // poder MIRAR: "198 cambiaron" no se puede ni creer ni desmentir, y "198
+        // cambiaron el municipio de Camagüey a CAMAGÜEY" se arregla en cinco
+        // minutos.
+        const campos: Array<{ campo: string; antes: string | null; despues: string | null }> = [];
+        const anota = (campo: string, antes: unknown, despues: unknown) => {
+          campos.push({
+            campo,
+            antes: antes == null ? null : String(antes),
+            despues: despues == null ? null : String(despues),
+          });
+        };
+
+        if ((geoData.codigo ?? null) !== (actual.codigo ?? null)) anota('código', actual.codigo, geoData.codigo);
+        if ((geoData.direccion ?? null) !== (actual.direccion ?? null)) anota('dirección', actual.direccion, geoData.direccion);
+        if ((geoData.municipio ?? null) !== (actual.municipio ?? null)) anota('municipio', actual.municipio, geoData.municipio);
+        if ((geoData.geolocalizacion ?? null) !== (actual.geolocalizacion ?? null)) anota('geolocalización', actual.geolocalizacion, geoData.geolocalizacion);
+        if (!mismoNumero(geoData.latitud, actual.latitud)) anota('latitud', actual.latitud, geoData.latitud);
+        if (!mismoNumero(geoData.longitud, actual.longitud)) anota('longitud', actual.longitud, geoData.longitud);
+
+        // ¿El código que viene lo tiene ya otro cliente de esta sucursal?
+        const dueñoDelCodigo = geoData.codigo
+          ? porCodigo.get(`${sucursalId}|${geoData.codigo}`)
+          : undefined;
+        const codigoOcupado = dueñoDelCodigo != null && dueñoDelCodigo !== actual.id;
+
+        // ¿Viene con el prefijo de otra sucursal? Se anota y se sigue: el dato es
+        // válido igualmente, pero es la prueba de que en el origen están asignando
+        // códigos que no corresponden.
+        const preEsperado = prefijoDe.get(sucursalId);
+        const preRecibido = geoData.codigo?.slice(0, 2).toUpperCase();
+        if (preEsperado && preRecibido && preEsperado !== preRecibido) {
+          r.prefijosAjenos++;
+          if (r.avisos.length < 30) {
+            r.avisos.push(
+              `${nombre} (${code}): el código ${geoData.codigo} empieza por ${preRecibido}, ` +
+                `y en ${code} todos los demás empiezan por ${preEsperado}`,
+            );
+          }
+        }
+
+        if (codigoOcupado) {
+          // Se escribe todo menos el código, y se deja dicho quién lo tiene: eso es
+          // lo que hay que arreglar en el origen, y sin el nombre del otro cliente
+          // no hay por dónde empezar.
+          geoData.codigo = actual.codigo ?? null;
+          const i = campos.findIndex((f) => f.campo === 'código');
+          if (i >= 0) campos.splice(i, 1);
+
+          r.choquesDeCodigo++;
+          if (r.avisos.length < 30) {
+            const otro = nombrePorId.get(dueñoDelCodigo!) ?? 'otro cliente';
+            r.avisos.push(
+              `${nombre} (${code}): Parranda le manda el código ${String(c.codigo).trim()}, ` +
+                `que en esa misma sucursal ya lo tiene ${otro}. Se guardó el resto sin tocar su código.`,
+            );
+          }
+        }
+
+        const cambio = campos.length > 0;
+
+        if (cambio) {
+          if (r.cambios.length < 200) {
+            r.cambios.push({ cliente: nombre, sucursal: code ?? null, campos });
+          }
+          await prisma.cliente.update({ where: { id: actual.id }, data: geoData });
+          r.actualizados++;
+
+          // Y la foto se actualiza con lo que se acaba de escribir.
+          //
+          // Sin esto, el mismo cliente repetido en el origen se comparaba SIEMPRE
+          // contra el valor que tenía antes de empezar: la segunda aparición veía
+          // una diferencia que ya se había escrito y volvía a escribir. Parranda
+          // manda 12.049 filas para 8.850 clientes, o sea que repetir es lo normal,
+          // no la excepción.
+          //
+          // Y no era solo contar de más: gana la última aparición, así que si el
+          // orden cambia entre pasadas el valor guardado va y viene, y en la
+          // siguiente "cambia" otra vez. Eso es lo que hacía que el número subiera
+          // solo —5703, 5913, 6127, 6602— sin que nadie tocara nada.
+          const foto = { ...actual, ...geoData };
+          porClave.set(`${sucursalId}|${norm(actual.nombre)}`, foto);
+          porId.set(actual.id, foto);
+          // El código recién escrito pasa a estar ocupado por este cliente: si más
+          // abajo llega otro con el mismo, se ve el choque igual que si viniera de
+          // la base.
+          if (geoData.codigo) porCodigo.set(`${sucursalId}|${geoData.codigo}`, actual.id);
+        } else {
+          r.sinCambios++;
+        }
+      } else {
+        // Parranda SOLO enriquece a MIS clientes (los que vienen de los pedidos). Un cliente
+        // de Parranda que NO existe aquí se OMITE: no se importa el catálogo entero de Parranda.
+        r.creados = 0;
+      }
+    } catch (e) {
+      // P2002 (codigo/nombre duplicado) u otro: no tumbar el sync, contar y seguir.
+      //
+      // Pero se guardan los primeros motivos. "114 err" a secas no se puede
+      // arreglar: no dice si son 114 veces lo mismo o 114 cosas distintas, y sin
+      // eso nadie sabe por dónde empezar.
+      r.errores++;
+      if (r.erroresDetalle.length < 5) {
+        const msg = (e as Error)?.message ?? String(e);
+        if (!r.erroresDetalle.includes(msg)) r.erroresDetalle.push(msg);
+      }
+    }
+  }
+  onProgress?.(r);
 
   // ACTIVOS E INACTIVOS. Sólo llegamos aquí si se recorrieron TODAS las páginas: si Parranda
   // fallara a mitad, la excepción sale antes y nadie se desactiva por una pasada cortada.

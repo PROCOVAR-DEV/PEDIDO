@@ -24,6 +24,7 @@ import { nombreComparable, codigoComparable } from '../lib/nombreVendedor';
 import { parsearFechaConsulta } from '../lib/fechaConsulta';
 import { emitEvent } from '../lib/events';
 import { claveDePedido, clavesDeBorrados, folioBaseDe, reservarFoliosBorrados } from '../lib/pedidoBorrado';
+import { fichaViva } from '../lib/clienteVivo';
 import { redisEnabled, publishJSON, getSubscriber, CH_IMPORT_DONE, CH_IMPORT_FAILED } from '../lib/redis';
 import { importQueue } from '../lib/queues';
 import { anotarEnCurso, anotarHecha, borrarEnCurso, leerEnCurso, leerHechas } from '../lib/importEnCurso';
@@ -2380,11 +2381,30 @@ async function processOrderRecord(
   // Ese P2002 NO es un error: significa que otro lo creó primero, así que se relee.
   // Sin esto el cliente se duplicaba y el pedido salía con folio -1, -2, -3...
   let client;
+  // Los ids de TODAS las fichas de este mismo cliente: la suya y las viejas que apuntan a ella.
+  // Con una sola ficha es [client.id], como siempre.
+  let fichasDelCliente: string[] = [];
   const existingClient = await prisma.cliente.findFirst({
     where: { nombre: nombreCliente, sucursalId },
   });
 
-  if (existingClient) {
+  // El nombre es el de una ficha INACTIVA con sucesora: Parranda renombró al cliente o le dio
+  // ficha nueva, y los archivos siguen trayendo el nombre viejo. El pedido va a la ficha viva;
+  // colgado de la vieja no lo vería el reparto ni el catálogo. A la vieja no se la toca (ni se
+  // renombra la viva con el nombre viejo: chocaría con el índice único).
+  const sucesion =
+    existingClient && !existingClient.activo && existingClient.sucesorId
+      ? await fichaViva(existingClient, (id) => prisma.cliente.findUnique({ where: { id } }))
+      : null;
+
+  if (existingClient && sucesion && sucesion.ficha.id !== existingClient.id) {
+    client = sucesion.ficha;
+    const previas = await prisma.cliente.findMany({
+      where: { sucesorId: { in: [client.id, ...sucesion.anteriores] } },
+      select: { id: true },
+    });
+    fichasDelCliente = [...new Set([client.id, ...sucesion.anteriores, ...previas.map((x) => x.id)])];
+  } else if (existingClient) {
     client = await actualizarCliente(existingClient);
   } else {
     try {
@@ -2428,7 +2448,10 @@ async function processOrderRecord(
   // El folio sin nuestro sufijo `-1`/`-2`. El número del folio (cuatro cifras) no se toca.
   const baseFolio = folioBaseDe(record.order.folio);
 
-  // Check if order already exists for THIS client (with base folio or any suffix)
+  if (fichasDelCliente.length === 0) fichasDelCliente = [client.id];
+
+  // Check if order already exists for THIS client (with base folio or any suffix). Si el cliente
+  // tiene fichas viejas, el pedido ya cargado puede estar colgado de cualquiera de ellas.
   const existingOrder = await prisma.pedido.findFirst({
     where: {
       sucursalId,
@@ -2437,7 +2460,7 @@ async function processOrderRecord(
         { folio: { startsWith: `${baseFolio}-` } },
       ],
       vendedorId: seller.id,
-      clienteId: client.id,
+      clienteId: { in: fichasDelCliente },
     },
     include: {
       items: true,
@@ -2452,7 +2475,7 @@ async function processOrderRecord(
    * seguir actualizándolo como siempre — si no, el pedido se quedaría congelado sin que
    * nadie entienda por qué.
    */
-  if (!existingOrder && borrados.has(claveDePedido(sucursalId, record.order.folio, seller.id, client.id))) {
+  if (!existingOrder && fichasDelCliente.some((id) => borrados.has(claveDePedido(sucursalId, record.order.folio, seller.id, id)))) {
     results.omitidos = (results.omitidos ?? 0) + 1;
     if (Array.isArray(results.omitidosDetalle) && results.omitidosDetalle.length < 50) {
       results.omitidosDetalle.push({ folio: baseFolio, cliente: client.nombre ?? '' });
@@ -2477,7 +2500,7 @@ async function processOrderRecord(
     });
     
     // Check if base folio is taken by another client
-    const baseFolioTaken = existingFolios.some(o => o.folio === baseFolio && o.clienteId !== client.id);
+    const baseFolioTaken = existingFolios.some(o => o.folio === baseFolio && !(o.clienteId && fichasDelCliente.includes(o.clienteId)));
     
     if (baseFolioTaken || existingFolios.length > 0) {
       // Find the next available suffix
