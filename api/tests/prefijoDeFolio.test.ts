@@ -64,3 +64,8 @@ test('lo que no tiene forma de folio sigue devolviendo null', () => {
   assert.equal(prefijoDeNota('VENTA ALMACEN'), null);
   assert.equal(prefijoDeNota(''), null);
 });
+
+test('el del CRM: vendedor y día, con la fecha de ocho cifras', () => {
+  assert.equal(prefijoDeFolio('P-A001-20261013-000042'), 'P-A001-20261013');
+  assert.equal(prefijoDeNota('A001-20261013-000042'), 'P-A001-20261013');
+});

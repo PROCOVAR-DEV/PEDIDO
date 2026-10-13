@@ -9,18 +9,12 @@
  *
  * # El folio
  *
- * El del CRM (`A001-20261013-000042`) NO va en `folio`. El cotejo con Ventra saca el
- * folio de la nota de la factura con la forma de Retool (`PDG26-260906-2992`, ver
- * `emparejarFactura.ts`), y uno del CRM no casaría con ninguna: el pedido no se facturaría
- * nunca a ojos de PEDIDO. Así que:
- *
- *   - `folioCrm` guarda el del CRM, ÚNICO: es la referencia externa.
- *   - `folio` lleva uno nuestro con la forma que el cotejo reconoce: `CRM26-261013-17`
- *     (`CRM` + año, el día del pedido y un número del día que no se repite).
+ * El del CRM (`A001-20261013-000042`) ES el folio del pedido, tal cual: Jose, 13/10/2026,
+ * «el CRM va a ser nuestro Retool». Es el que se copia en la nota de la factura, y el
+ * cotejo lo reconoce (`folioDeLaNota` en `emparejarFactura.ts`).
  *
  * Nuestro sufijo `-1`/`-2` no entra en juego: un pedido del CRM es UN cliente, así que su
- * folio nunca se comparte, y la ingesta de CSV no lo toca porque ningún folio de Retool
- * empieza por `CRM` (todos empiezan por `P`).
+ * folio nunca se comparte ni se toca.
  */
 import { Prisma } from '@prisma/client';
 import { nombreComparable, codigoComparable } from './nombreVendedor';
@@ -44,7 +38,7 @@ export interface LineaCrm {
 
 export interface PedidoCrm {
   crmPedidoId: string;
-  folioCrm: string;
+  folio: string;
   sucursal: string;
   fecha: string;
   fechaComprometida: string | null;
@@ -89,8 +83,8 @@ export function leerPedidoCrm(cuerpo: unknown): { ok: true; pedido: PedidoCrm } 
   const crmPedidoId = texto(b.crmPedidoId).toLowerCase();
   if (!UUID.test(crmPedidoId)) mal('crmPedidoId', 'obligatorio, un uuid');
 
-  const folioCrm = texto(b.folioCrm).toUpperCase();
-  if (!FOLIO_CRM.test(folioCrm)) mal('folioCrm', 'obligatorio, con la forma XXXX-YYYYMMDD-CCCCCC');
+  const folio = texto(b.folio).toUpperCase();
+  if (!FOLIO_CRM.test(folio)) mal('folio', 'obligatorio, con la forma XXXX-YYYYMMDD-CCCCCC');
 
   const sucursal = texto(b.sucursal).toUpperCase();
   if (!sucursal) mal('sucursal', 'obligatorio, el código (CAM, HAB…)');
@@ -108,6 +102,9 @@ export function leerPedidoCrm(cuerpo: unknown): { ok: true; pedido: PedidoCrm } 
   // aceptara, todos los que no lo tienen acabarían siendo el MISMO vendedor aquí.
   if (!/^[A-Z0-9]{4}$/.test(vendedor.codigo) || vendedor.codigo === 'LOC0') {
     mal('vendedor.codigo', 'obligatorio: el código de vendedor de 4 caracteres de Accesos');
+  } else if (FOLIO_CRM.test(folio) && !folio.startsWith(`${vendedor.codigo}-`)) {
+    // El folio empieza por el código del vendedor: si no casan, uno de los dos está mal.
+    mal('vendedor.codigo', `no casa con el folio ${folio}`);
   }
 
   const c = b.cliente ?? {};
@@ -169,26 +166,12 @@ export function leerPedidoCrm(cuerpo: unknown): { ok: true; pedido: PedidoCrm } 
   return {
     ok: true,
     pedido: {
-      crmPedidoId, folioCrm, sucursal, fecha, fechaComprometida,
+      crmPedidoId, folio, sucursal, fecha, fechaComprometida,
       vendedor, cliente, puntoDeVenta, domicilio,
       detalles: textoONulo(b.detalles),
       lineas,
     },
   };
-}
-
-/**
- * Nuestro folio para un pedido del CRM: `CRM26-261013-17`.
- *
- * Con la forma que reconoce el cotejo (`[A-Z]{2,5}\d{2}-\d{6}-?\d{1,6}`), así que la
- * factura que lo lleve en su nota se empareja como cualquier otra. El número es del DÍA y
- * no se repite en ninguna sucursal (ver `ContadorFolioCrm`).
- */
-export function folioDePedidoCrm(fecha: string, numero: number): string {
-  const [anio, mes, dia] = fecha.split('-');
-  const aa = anio.slice(2);
-
-  return `CRM${aa}-${aa}${mes}${dia}-${numero}`;
 }
 
 /** El importe de la línea, sólo si vino en CUP: es en lo que están los de Parranda. */
@@ -218,14 +201,14 @@ export async function recibirPedidoCrm(p: PedidoCrm): Promise<Recepcion> {
   // Por uuid O por folio en UNA consulta: con dos, un envío simultáneo del mismo pedido
   // podía entrar entre las dos y salir como «folio de otro pedido».
   const yaEsta = await prisma.pedido.findFirst({
-    where: { OR: [{ crmPedidoId: p.crmPedidoId }, { folioCrm: p.folioCrm }] },
+    where: { OR: [{ crmPedidoId: p.crmPedidoId }, { folio: p.folio }] },
   });
   if (yaEsta?.crmPedidoId === p.crmPedidoId) {
     return { status: 200, cuerpo: { pedidoId: yaEsta.id, folio: yaEsta.folio, duplicado: true } };
   }
   const otroConEseFolio = yaEsta;
   if (otroConEseFolio) {
-    return { status: 409, cuerpo: { error: `El folio ${p.folioCrm} ya es del pedido ${otroConEseFolio.folio}, que vino de otro pedido del CRM.` } };
+    return { status: 409, cuerpo: { error: `El folio ${p.folio} ya lo tiene otro pedido en PEDIDO (${otroConEseFolio.id}).` } };
   }
 
   const sucursal = await prisma.sucursal.findUnique({ where: { codigo: p.sucursal } });
@@ -242,19 +225,12 @@ export async function recibirPedidoCrm(p: PedidoCrm): Promise<Recepcion> {
 
   const cliente = await clienteDelCrm(p, sucursal.id);
 
-  const contador = await prisma.contadorFolioCrm.upsert({
-    where: { dia: p.fecha },
-    create: { dia: p.fecha, ultimo: 1 },
-    update: { ultimo: { increment: 1 } },
-  });
-  const folio = folioDePedidoCrm(p.fecha, contador.ultimo);
   const d = p.domicilio;
 
   try {
     const creado = await prisma.pedido.create({
       data: {
-        folio,
-        folioCrm: p.folioCrm,
+        folio: p.folio,
         crmPedidoId: p.crmPedidoId,
         sucursalId: sucursal.id,
         vendedorId: vendedor.id,
@@ -290,7 +266,7 @@ export async function recibirPedidoCrm(p: PedidoCrm): Promise<Recepcion> {
     const ganador = await prisma.pedido.findUnique({ where: { crmPedidoId: p.crmPedidoId } });
     if (ganador) return { status: 200, cuerpo: { pedidoId: ganador.id, folio: ganador.folio, duplicado: true } };
 
-    return { status: 409, cuerpo: { error: `El folio ${p.folioCrm} ya lo tiene otro pedido.` } };
+    return { status: 409, cuerpo: { error: `El folio ${p.folio} ya lo tiene otro pedido.` } };
   }
 }
 

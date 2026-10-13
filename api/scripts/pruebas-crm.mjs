@@ -3,7 +3,7 @@
  *
  * `tests/pedido-desde-crm.test.ts` prueba la validación y el folio sin base. Esto prueba lo
  * que sólo se ve con base: que reenviar no duplica (tampoco cinco envíos a la vez), que el
- * folio del CRM es único, que el número del día no se repite y que el estado vuelve.
+ * folio del CRM entra tal cual y es único, y que el estado vuelve.
  *
  * Usa lo COMPILADO (`dist/`): el router carga módulos que leen `__dirname`.
  *
@@ -48,7 +48,7 @@ let n = 0
 const uuid = () => `0192f1e2-3b4c-7d5e-8f60-${String(++n).padStart(12, '0')}`
 const pedido = (extra = {}) => ({
   crmPedidoId: uuid(),
-  folioCrm: `A001-20261013-${String(n).padStart(6, '0')}`,
+  folio: `A001-20261013-${String(n).padStart(6, '0')}`,
   sucursal: 'CAM',
   fecha: '2026-10-13',
   vendedor: { codigo: 'A001', accesosId: 'u-1', nombre: 'Ana Pérez' },
@@ -62,7 +62,6 @@ const pedido = (extra = {}) => ({
 test.before(async () => {
   await prisma.pedidoItem.deleteMany()
   await prisma.pedido.deleteMany()
-  await prisma.contadorFolioCrm.deleteMany()
   await prisma.cliente.deleteMany()
   await prisma.vendedor.deleteMany()
   await prisma.sucursal.deleteMany()
@@ -80,15 +79,15 @@ test('sin la clave de servicio no entra nada', async () => {
   assert.equal(await prisma.pedido.count(), 0)
 })
 
-test('entra con NUESTRO folio y el del CRM al lado; crea vendedor y cliente', async () => {
+test('entra con el folio del CRM tal cual; crea vendedor y cliente', async () => {
   const p = pedido()
   const r = await enviar(p)
   assert.equal(r.status, 201)
-  assert.equal(r.cuerpo.folio, 'CRM26-261013-1')
+  assert.equal(r.cuerpo.folio, p.folio)
   assert.equal(r.cuerpo.duplicado, false)
 
   const g = await prisma.pedido.findUnique({ where: { id: r.cuerpo.pedidoId }, include: { items: true, vendedor: true, cliente: true } })
-  assert.equal(g.folioCrm, p.folioCrm)
+  assert.equal(g.folio, p.folio)
   assert.equal(g.crmPedidoId, p.crmPedidoId)
   assert.equal(g.costoDomicilio, 3.5)
   assert.equal(g.tasaDomicilio, 410)
@@ -124,7 +123,7 @@ test('cinco envíos A LA VEZ del mismo pedido dejan uno', async () => {
   assert.equal(await prisma.pedido.count({ where: { crmPedidoId: p.crmPedidoId } }), 1)
 })
 
-test('el número del día no se repite y el cliente se reutiliza', async () => {
+test('ningún folio repetido y el cliente se reutiliza', async () => {
   const folios = (await prisma.pedido.findMany({ select: { folio: true } })).map((x) => x.folio)
   assert.equal(new Set(folios).size, folios.length)
   assert.equal(await prisma.cliente.count(), 1)
@@ -146,15 +145,17 @@ test('lo que falta de este lado es un 422 con el motivo', async () => {
   assert.match(r.cuerpo.error, /XXX/)
 
   await prisma.vendedor.create({ data: { codigo: 'B002', nombre: 'BETO DE BAJA', activo: false } })
-  const b = await enviar(pedido({ vendedor: { codigo: 'B002' } }))
+  const deBaja = pedido({ vendedor: { codigo: 'B002' } })
+  deBaja.folio = deBaja.folio.replace('A001', 'B002')
+  const b = await enviar(deBaja)
   assert.equal(b.status, 422)
   assert.match(b.cuerpo.error, /de baja/)
 })
 
 test('un cuerpo inválido es un 400 con los campos', async () => {
-  const r = await enviar(pedido({ lineas: [], folioCrm: 'PDG26-260906-2992' }))
+  const r = await enviar(pedido({ lineas: [], folio: 'PDG26-260906-2992' }))
   assert.equal(r.status, 400)
-  assert.deepEqual(r.cuerpo.campos.map((c) => c.campo), ['folioCrm', 'lineas'])
+  assert.deepEqual(r.cuerpo.campos.map((c) => c.campo), ['folio', 'lineas'])
 })
 
 test('el estado vuelve: factura, entrega, y `existe: false` si lo borraron aquí', async () => {

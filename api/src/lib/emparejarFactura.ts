@@ -75,10 +75,36 @@ const CON_ETIQUETA = new RegExp(String.raw`\bP-(${CUERPO})\b`, 'i');
 /** Sin la etiqueta, por si algún día la nota viene escrita de otra forma. */
 const SUELTO = new RegExp(String.raw`\b(${CUERPO})\b`, 'i');
 
+/**
+ * El folio del CRM: `A001-20261013-000042` (código de vendedor de 4, día con el año
+ * entero, consecutivo de 6). Desde el 13/10/2026 es EL folio de los pedidos: lo genera el
+ * CRM, que sustituye a Retool (Jose: «el CRM va a ser nuestro Retool»).
+ *
+ * Se mira ANTES que el de Retool y, si la nota trae algo con su forma, ya no se mira el
+ * otro: el patrón de Retool, suelto, se come un trozo de uno del CRM
+ * (`AB12-20261013-000042` → `AB12-20261013`, con la fecha leída como «pegada») y ataría
+ * la factura a un pedido que no existe o, peor, a otro.
+ *
+ * Un pedido del CRM es UN cliente, así que no lleva nuestro sufijo `-1`/`-2`. Si en la
+ * nota aparece uno detrás (`…-000042-1`), está mal copiado y NO se empareja: quitarle el
+ * trozo para que case sería el error de julio otra vez.
+ */
+const CUERPO_CRM = String.raw`[A-Z0-9]{4}-\d{8}-\d{6}`;
+const FORMA_CRM = new RegExp(String.raw`\b${CUERPO_CRM}`, 'i');
+const CRM_CON_ETIQUETA = new RegExp(String.raw`\bP-(${CUERPO_CRM})(?![-\d])`, 'i');
+const CRM_SUELTO = new RegExp(String.raw`\b(${CUERPO_CRM})(?![-\d])`, 'i');
+
 export function folioDeLaNota(nota: string | null | undefined): string | null {
   if (!nota) return null;
 
   const texto = String(nota).toUpperCase();
+
+  if (FORMA_CRM.test(texto)) {
+    const crm = texto.match(CRM_CON_ETIQUETA) ?? texto.match(CRM_SUELTO);
+
+    return crm ? crm[1] : null;
+  }
+
   const m = texto.match(CON_ETIQUETA) ?? texto.match(SUELTO);
 
   return m ? m[1] : null;
@@ -151,8 +177,10 @@ export function prefijoDeFolio(folio: string): string | null {
   const partes = (folio || '').trim().toUpperCase().split('-');
 
   // P - nomenclador - fecha - número. Menos de cuatro trozos no es un folio nuestro.
+  // La fecha son seis cifras en los de Retool (`AAMMDD`) y ocho en los del CRM
+  // (`AAAAMMDD`): `P-A001-20261013` son los de ese vendedor ese día.
   if (partes.length < 4 || partes[0] !== 'P') return null;
-  if (!/^\d{6}$/.test(partes[2])) return null;
+  if (!/^(\d{6}|\d{8})$/.test(partes[2])) return null;
 
   return partes.slice(0, 3).join('-');
 }
