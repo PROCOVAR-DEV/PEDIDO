@@ -1,9 +1,7 @@
 /**
- * ¿Pueden ser el mismo cliente dos nombres? Se usa antes de RENOMBRAR una ficha al nombre que
- * Parranda le da a su código: si no comparten ni una palabra con significado (`PUNTO DE VENTA
- * CARRETERA DEL VALLE` frente a `CAFETERIA AMAURI`), el código está mal puesto en alguno de los dos
- * lados y renombrar sólo propagaría el error. Con la etiqueta de ruta de Santiago de más (`V6`,
- * `M7`…) o un prefijo de tipo (`KIOSCO`), sí son el mismo.
+ * Nombres de clientes que pueden ser el mismo escrito de otra manera: sin la etiqueta de ruta de
+ * Santiago (`V6`, `M7`…) ni el tipo (`KIOSCO`, `CAFETERIA`). Se usa para reconocer al cliente que
+ * el vendedor creó sin conexión cuando Parranda le pone código y nombre.
  *
  * Puro, para probarlo sin base de datos.
  */
@@ -22,14 +20,8 @@ function palabras(s: string): string[] {
     .filter((w) => w.length >= 3 && !DE_TIPO.has(w) && !ETIQUETA_RUTA.test(w));
 }
 
-export function comparteNombre(a: string, b: string): boolean {
-  const de = new Set(palabras(a));
-
-  return palabras(b).some((w) => de.has(w));
-}
-
 /**
- * ¿Es el MISMO cliente? Más exigente que `comparteNombre`, porque aquí se FUSIONA: dos palabras
+ * ¿Es el MISMO cliente? Aquí se FUSIONA, así que es exigente: dos palabras
  * con significado en común, o el nombre entero —si sólo tiene una palabra— dentro del otro.
  * `KIOSKO ALBERTO FABRE` y `KIOSKO GARCES FABRE` sólo comparten un apellido y pueden ser hermanos.
  */

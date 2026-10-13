@@ -7,7 +7,6 @@ import { emitEvent } from './events';
 import { decidirActivos, type FilaDeParranda } from './clientesActivos';
 import { filasGanadoras } from './parrandaFilas';
 import { nombreComparable } from './nombreVendedor';
-import { comparteNombre } from './nombreParecido';
 import { esConsumoPropio } from './consumoPropio';
 
 const PARRANDA_URL = process.env.PARRANDA_API_URL || 'https://ccsa.retool.com/url/procovar';
@@ -293,7 +292,8 @@ export async function processParrandaSync(
       // Otra fila de Parranda cae en esta misma ficha y es la que se aplica: ésta no se escribe.
       if (actual && !aplica.has(i)) { r.repetidas++; continue; }
 
-      // La ficha se encontró por el CÓDIGO y no por el nombre: Parranda la llama de otra manera.
+      // La ficha se encontró por el CÓDIGO y no por el nombre: Parranda la llama de otra manera
+      // (le cambió el nombre: el código es único y es de Parranda, así que es el mismo cliente).
       // Se le pone el nombre de Parranda, que es el que traen los archivos de pedidos; si no, el
       // siguiente pedido de ese cliente no la encuentra por nombre. Sólo si ese nombre está libre
       // en la sucursal, y nunca a una ficha inactiva.
@@ -306,7 +306,6 @@ export async function processParrandaSync(
         !esConsumoPropio(actual.nombre) &&
         // El `-DUP-n` es el código con que Parranda marca a un duplicado: no identifica a nadie.
         !/-DUP-/i.test(geoData.codigo ?? '') &&
-        comparteNombre(actual.nombre, nombre) &&
         !porClave.has(key) &&
         !porClave.has(`${sucursalId}|${norm(nuevoNombre)}`);
 
