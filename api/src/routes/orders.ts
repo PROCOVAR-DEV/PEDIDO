@@ -1420,6 +1420,7 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
         estado: outcome.results.failed > 0 ? 'con_problemas' : 'entro', estadoHttp: 200,
         filas: records.length, creados: outcome.results.created, actualizados: outcome.results.updated,
         fallidos: outcome.results.failed, omitidos: outcome.results.omitidos ?? 0,
+        congelados: outcome.results.congelados,
         motivo: outcome.results.failed > 0 ? `${outcome.results.failed} fila(s) con problema` : null,
         ms: Date.now() - base.desdeAt,
       });
@@ -1978,6 +1979,8 @@ export type BulkImportResults = {
   /// `failed`: no es un fallo del archivo, es una decisión que alguien tomó.
   omitidos: number;
   omitidosDetalle: { folio: string; cliente: string }[];
+  /** Pedidos ya completados que el archivo volvió a traer: no se tocan. */
+  congelados: number;
 };
 export type BulkImportOutcome = {
   ok: boolean;
@@ -2148,7 +2151,7 @@ export async function processBulkImport(
     }
   }
 
-  const results: BulkImportResults = { created: 0, updated: 0, lineas: 0, failed: 0, sinAsignar: 0, errors: [], omitidos: 0, omitidosDetalle: [] };
+  const results: BulkImportResults = { created: 0, updated: 0, lineas: 0, failed: 0, sinAsignar: 0, errors: [], omitidos: 0, omitidosDetalle: [], congelados: 0 };
   // Los ids, para contar PEDIDOS y no renglones. Ver `BulkImportResults`.
   const idsCreados = new Set<string>();
   const idsActualizados = new Set<string>();
@@ -2525,6 +2528,14 @@ async function processOrderRecord(
       results.omitidosDetalle.push({ folio: baseFolio, cliente: client.nombre ?? '' });
     }
 
+    return;
+  }
+
+  // Un pedido COMPLETADO ya no cambia. El gestor puede volver a subir el archivo para
+  // actualizarlo, pero se queda como estaba cuando se completó: ni cantidades, ni líneas nuevas,
+  // ni fechas, ni cobro. Se cuenta aparte para que se vea por qué lo que subió no entró.
+  if (existingOrder?.estado === 'completada') {
+    results.congelados = (results.congelados ?? 0) + 1;
     return;
   }
 

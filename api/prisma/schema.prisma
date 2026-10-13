@@ -709,6 +709,8 @@ model ImportacionArchivo {
   actualizados Int      @default(0)
   fallidos     Int      @default(0)
   omitidos     Int      @default(0)
+  /// Pedidos ya COMPLETADOS que el archivo volvía a traer: no se tocan.
+  congelados   Int      @default(0)
   /// Lo que PEDIDO dijo, tal cual, cuando no entró.
   motivo       String?
   ms           Int?

@@ -33,6 +33,8 @@ interface Fila {
   actualizados: number;
   fallidos: number;
   omitidos: number;
+  /** Pedidos ya completados que el archivo volvió a traer: no se tocan. */
+  congelados?: number;
   motivo: string | null;
   ms: number | null;
   createdAt: string;
@@ -236,6 +238,7 @@ export function IngestaPanel() {
                       {" "}
                       · {f.creados + f.actualizados} {f.creados + f.actualizados === 1 ? "pedido" : "pedidos"}
                       {f.omitidos > 0 && <> · {f.omitidos} borrados, no entraron</>}
+                      {(f.congelados ?? 0) > 0 && <> · {f.congelados} ya completados, sin cambios</>}
                     </>
                   )}
                   {f.ms != null && <> · {f.ms < 1000 ? `${f.ms} ms` : `${(f.ms / 1000).toFixed(1).replace(".", ",")} s`}</>}
