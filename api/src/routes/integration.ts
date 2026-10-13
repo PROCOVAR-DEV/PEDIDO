@@ -21,6 +21,7 @@ import { emitEvent } from '../lib/events';
 import { pedidoParaLista } from './orders';
 import { ventasDeSucursal, databases } from '../lib/ventra';
 import { folioDeLaNota } from '../lib/emparejarFactura';
+import { estadoDePedidosCrm, leerPedidoCrm, recibirPedidoCrm } from '../lib/pedidoDesdeCrm';
 
 const router = Router();
 router.use(serviceAuth);
@@ -1243,6 +1244,57 @@ router.get('/ventra/sales', async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: `No se pudo preguntar a Ventra: ${(e as Error).message}` });
   }
+});
+
+/**
+ * POST /integration/crm/pedidos — un pedido que tomó un vendedor en el CRM.
+ *
+ * Lo manda el `integrador/` del CRM, con la clave de servicio. Idempotente por el uuid del
+ * pedido en el CRM: reenviarlo devuelve el mismo (200, `duplicado: true`) en vez de crear
+ * otro. Responde:
+ *
+ *   201 { pedidoId, folio, duplicado: false }  — entró. `folio` es el NUESTRO.
+ *   200 { pedidoId, folio, duplicado: true }   — ya había entrado.
+ *   400 { error, campos }                      — el cuerpo no vale (no lo arregla reenviar).
+ *   409 { error }                              — ese folio del CRM ya es de otro pedido.
+ *   422 { error }                              — falta algo de este lado (sucursal, vendedor de baja).
+ *
+ * Ver `lib/pedidoDesdeCrm.ts` y, para el contrato entero, el documento del CRM
+ * `docs/2026-10-13-integrador-crm-pedido.md`.
+ */
+router.post('/crm/pedidos', async (req, res) => {
+  const leido = leerPedidoCrm(req.body);
+  if ('campos' in leido) {
+    return res.status(400).json({ error: 'Pedido del CRM inválido', campos: leido.campos });
+  }
+
+  const r = await recibirPedidoCrm(leido.pedido);
+  if (r.status === 201) {
+    const p = await prisma.pedido.findUnique({ where: { id: r.cuerpo.pedidoId }, select: { sucursalId: true } });
+    emitEvent('pedido', {
+      sucursalId: p?.sucursalId ?? null,
+      id: r.cuerpo.pedidoId,
+      accion: 'create',
+      datos: await pedidoParaLista(r.cuerpo.pedidoId),
+    });
+  }
+  res.status(r.status).json(r.cuerpo);
+});
+
+/**
+ * POST /integration/crm/pedidos/estado — cómo van los pedidos que mandó el CRM.
+ *
+ * Body: { ids: [crmPedidoId] } (máximo 500). Lo pregunta el integrador del CRM para
+ * llevarse de vuelta la factura, la entrega y si se anuló (`existe: false`: lo borraron aquí).
+ */
+router.post('/crm/pedidos/estado', async (req, res) => {
+  const ids: string[] = Array.isArray(req.body?.ids)
+    ? [...new Set<string>(req.body.ids.filter((x: unknown) => typeof x === 'string' && x.trim()).map((x: string) => x.trim().toLowerCase()))]
+    : [];
+  if (ids.length === 0) return res.status(400).json({ error: 'Se espera { ids: [crmPedidoId] }.' });
+  if (ids.length > 500) return res.status(413).json({ error: 'Máximo 500 pedidos por llamada.' });
+
+  res.json({ pedidos: await estadoDePedidosCrm(ids) });
 });
 
 export default router;

@@ -300,6 +300,17 @@ model Pedido {
    */
   completadoPorId    String?
   completadoPor      String?
+  /// El pedido del CRM del que viene (su uuid), si entró por `POST /integration/crm/pedidos`.
+  /// Es la llave de la idempotencia: el integrador del CRM reenvía hasta que le contestan,
+  /// y reenviar el mismo pedido tiene que devolver ESTE, no crear otro.
+  crmPedidoId        String?                @unique
+  /// El folio con el que lo tomó el vendedor en el CRM (`A001-20261013-000042`).
+  ///
+  /// Va APARTE de `folio` a propósito: el cotejo con Ventra sólo reconoce folios con la
+  /// forma de Retool (`PDG26-260906-2992`), y uno del CRM metido en `folio` no casaría con
+  /// ninguna factura. `folio` lleva el nuestro (`CRM26-261013-17`, ver
+  /// `lib/pedidoDesdeCrm.ts`) y éste queda como la referencia externa, única.
+  folioCrm           String?                @unique
   items              PedidoItem[]
   copias             CopiaPortapapeles[]
   domicilioGrupos    PedidoDomicilioGrupo[]
@@ -318,6 +329,18 @@ model Pedido {
   // los 43k pedidos en cada carga de la lista.
   @@index([clienteId])
   @@map("Order")
+}
+
+/// El número del día para los folios de los pedidos que llegan del CRM.
+///
+/// Una fila por día y un `upsert` con `increment`, que Postgres hace en una sola sentencia
+/// (INSERT … ON CONFLICT DO UPDATE): dos pedidos a la vez nunca sacan el mismo número. No es
+/// una SEQUENCE porque el esquema se aplica con `prisma db push`, que no las crea.
+model ContadorFolioCrm {
+  dia    String @id // YYYY-MM-DD, el día del pedido
+  ultimo Int    @default(0)
+
+  @@map("CrmFolioCounter")
 }
 
 model PedidoItem {

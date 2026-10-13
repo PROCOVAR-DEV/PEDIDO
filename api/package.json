@@ -12,7 +12,8 @@
     "reset": "npx prisma migrate reset --force && npx prisma db seed",
     "studio": "npx prisma studio",
     "test": "node --test --import ./tests/registrar.mjs 'tests/*.test.ts'",
-    "test:integracion": "node --test --import ./tests/registrar.mjs scripts/pruebas-integracion.mjs"
+    "test:integracion": "node --test --import ./tests/registrar.mjs scripts/pruebas-integracion.mjs",
+    "test:crm": "node --test scripts/pruebas-crm.mjs"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.1.0",
