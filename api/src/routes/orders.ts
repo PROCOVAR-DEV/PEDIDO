@@ -25,6 +25,7 @@ import { parsearFechaConsulta } from '../lib/fechaConsulta';
 import { emitEvent } from '../lib/events';
 import { claveDePedido, clavesDeBorrados, folioBaseDe, reservarFoliosBorrados } from '../lib/pedidoBorrado';
 import { fichaViva } from '../lib/clienteVivo';
+import { unicaFichaParecida } from '../lib/nombreParecido';
 import { redisEnabled, publishJSON, getSubscriber, CH_IMPORT_DONE, CH_IMPORT_FAILED } from '../lib/redis';
 import { importQueue } from '../lib/queues';
 import { anotarEnCurso, anotarHecha, borrarEnCurso, leerEnCurso, leerHechas } from '../lib/importEnCurso';
@@ -2414,15 +2415,42 @@ async function processOrderRecord(
   } else if (existingClient) {
     client = await actualizarCliente(existingClient);
   } else {
+    // Cliente nuevo CON código de Parranda. Los vendedores crean clientes en Retool sin conexión
+    // (el archivo trae «NO CREADO») y Parranda los crea después con su código y a veces otro
+    // nombre: el mismo cliente, que sin esto acababa con DOS fichas. Si hay UNA ficha sin código
+    // de esta sucursal con un nombre equivalente, es ésa: toma el código y el nombre de Parranda.
+    let adoptada = null;
+    if (incomingCode) {
+      try {
+        const sinCodigo = await prisma.cliente.findMany({
+          where: { sucursalId, activo: true, codigo: null },
+          select: { id: true, nombre: true },
+        });
+        const parecida = unicaFichaParecida(nombreCliente, sinCodigo.filter((f) => !esConsumoPropio(f.nombre)));
+        if (parecida) {
+          adoptada = await prisma.cliente.update({
+            where: { id: parecida.id },
+            data: { nombre: nombreCliente, codigo: incomingCode, zona: record.client.zona },
+          });
+        }
+      } catch {
+        adoptada = null; // otro pedido del mismo archivo se adelantó (P2002): se sigue por el camino de siempre
+      }
+    }
+
     try {
-      client = await prisma.cliente.create({
-        data: {
-          codigo: incomingCode,
-          nombre: nombreCliente,
-          zona: record.client.zona,
-          sucursalId,
-        },
-      });
+      if (adoptada) {
+        client = adoptada;
+      } else {
+        client = await prisma.cliente.create({
+          data: {
+            codigo: incomingCode,
+            nombre: nombreCliente,
+            zona: record.client.zona,
+            sucursalId,
+          },
+        });
+      }
     } catch (error) {
       if (
         !(error instanceof Prisma.PrismaClientKnownRequestError) ||

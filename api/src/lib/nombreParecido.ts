@@ -27,3 +27,29 @@ export function comparteNombre(a: string, b: string): boolean {
 
   return palabras(b).some((w) => de.has(w));
 }
+
+/**
+ * ¿Es el MISMO cliente? Más exigente que `comparteNombre`, porque aquí se FUSIONA: dos palabras
+ * con significado en común, o el nombre entero —si sólo tiene una palabra— dentro del otro.
+ * `KIOSKO ALBERTO FABRE` y `KIOSKO GARCES FABRE` sólo comparten un apellido y pueden ser hermanos.
+ */
+export function esElMismoCliente(a: string, b: string): boolean {
+  const A = new Set(palabras(a));
+  const comunes = palabras(b).filter((w) => A.has(w));
+  const distintas = new Set(comunes).size;
+
+  return distintas >= 2 || (distintas >= 1 && Math.min(A.size, new Set(palabras(b)).size) === 1);
+}
+
+/**
+ * De una lista de fichas SIN código, la ÚNICA que puede ser este cliente nuevo; si hay dos o
+ * más, o ninguna, null: ante la duda se crea una ficha nueva, que es lo que siempre se hizo.
+ *
+ * Es el caso del cliente que el vendedor crea sin conexión (el archivo trae «NO CREADO») y que
+ * Parranda después crea con su código y, a veces, otro nombre.
+ */
+export function unicaFichaParecida<T extends { id: string; nombre: string }>(nombre: string, fichas: T[]): T | null {
+  const parecidas = fichas.filter((f) => esElMismoCliente(nombre, f.nombre));
+
+  return parecidas.length === 1 ? parecidas[0] : null;
+}
