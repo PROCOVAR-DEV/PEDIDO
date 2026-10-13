@@ -75,10 +75,37 @@ const CON_ETIQUETA = new RegExp(String.raw`\bP-(${CUERPO})\b`, 'i');
 /** Sin la etiqueta, por si algún día la nota viene escrita de otra forma. */
 const SUELTO = new RegExp(String.raw`\b(${CUERPO})\b`, 'i');
 
+/**
+ * El folio del CRM: `A001-20261013-000042` (código de vendedor de 4, día con el año
+ * entero, consecutivo de 6). Desde el 13/10/2026 los pedidos del CRM entran con su folio
+ * (`POST /integration/crm/pedidos`), A LA VEZ que los de Retool por n8n, que no cambian.
+ *
+ * Sólo AÑADE: una nota sin nada con esta forma sigue exactamente el camino de antes. Si
+ * la trae, se lee como del CRM y no se prueba el de Retool, porque ese, suelto, se come
+ * un trozo de uno del CRM
+ * (`AB12-20261013-000042` → `AB12-20261013`, con la fecha leída como «pegada») y ataría
+ * la factura a un pedido que no existe o, peor, a otro.
+ *
+ * Un pedido del CRM es UN cliente, así que no lleva nuestro sufijo `-1`/`-2`. Si en la
+ * nota aparece uno detrás (`…-000042-1`), está mal copiado y NO se empareja: quitarle el
+ * trozo para que case sería el error de julio otra vez.
+ */
+const CUERPO_CRM = String.raw`[A-Z0-9]{4}-\d{8}-\d{6}`;
+const FORMA_CRM = new RegExp(String.raw`\b${CUERPO_CRM}`, 'i');
+const CRM_CON_ETIQUETA = new RegExp(String.raw`\bP-(${CUERPO_CRM})(?![-\d])`, 'i');
+const CRM_SUELTO = new RegExp(String.raw`\b(${CUERPO_CRM})(?![-\d])`, 'i');
+
 export function folioDeLaNota(nota: string | null | undefined): string | null {
   if (!nota) return null;
 
   const texto = String(nota).toUpperCase();
+
+  if (FORMA_CRM.test(texto)) {
+    const crm = texto.match(CRM_CON_ETIQUETA) ?? texto.match(CRM_SUELTO);
+
+    return crm ? crm[1] : null;
+  }
+
   const m = texto.match(CON_ETIQUETA) ?? texto.match(SUELTO);
 
   return m ? m[1] : null;
@@ -149,6 +176,11 @@ export function prefijoDeNota(folio: string): string | null {
 
 export function prefijoDeFolio(folio: string): string | null {
   const partes = (folio || '').trim().toUpperCase().split('-');
+
+  // El del CRM (`P-A001-20261013-000042`): los de ese vendedor ese día. Un folio de
+  // Retool no puede tener esta forma (su fecha son seis cifras), así que no les afecta.
+  const crm = /^P-([A-Z0-9]{4})-(\d{8})-\d{6}$/.exec((folio || '').trim().toUpperCase());
+  if (crm) return `P-${crm[1]}-${crm[2]}`;
 
   // P - nomenclador - fecha - número. Menos de cuatro trozos no es un folio nuestro.
   if (partes.length < 4 || partes[0] !== 'P') return null;
