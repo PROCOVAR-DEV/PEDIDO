@@ -7,12 +7,14 @@
  * el sync de la tarde lo casara por nombre, y los que Parranda no manda (Granma, Palma, Moa)
  * no lo recibían nunca.
  *
- * Se acepta el formato de Parranda —dos letras, dos cifras, tres letras, cuatro cifras— con el
- * `-DUP-n` con que Parranda marca a sus duplicados (el sync los guarda igual: hay 119), y el
- * numérico de siempre. «NO CREADO» (el cliente aún no existe en Parranda) y cualquier otra cosa
- * no son un código: null, como antes.
+ * Se acepta el formato EXACTO de Parranda —dos letras, dos cifras, tres letras, cuatro cifras— y
+ * el numérico de siempre. Nada más: cuando Parranda trabaja sin conexión a un cliente nuevo le
+ * pone `client1`, `client2` o un uuid, y el MISMO valor sirve para varios clientes; si eso se
+ * guardara como código mezclaría clientes distintos. Tampoco entran «NO CREADO» (el cliente aún
+ * no existe en Parranda) ni los `-DUP-n` con que Parranda marca a sus duplicados: esos los trae
+ * el sync, que ve la fila entera de Parranda y no sólo una columna del pedido.
  */
-const FORMATO_PARRANDA = /^[A-Z]{2}\d{2}[A-Z]{3}\d{4}(?:-DUP-\d+)?$/;
+const FORMATO_PARRANDA = /^[A-Z]{2}\d{2}[A-Z]{3}\d{4}$/;
 
 export function codigoDeCliente(crudo: unknown): string | null {
   if (crudo == null) return null;

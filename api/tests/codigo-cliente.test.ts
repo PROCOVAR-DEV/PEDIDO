@@ -9,8 +9,10 @@ test('el código de Parranda de la fila entra (antes se tiraba)', () => {
   assert.equal(codigoDeCliente('GR05TCP0013'), 'GR05TCP0013');
 });
 
-test('el duplicado que Parranda marca con -DUP-n entra, porque el sync también lo guarda', () => {
-  assert.equal(codigoDeCliente('SC08TCP0007-DUP-1'), 'SC08TCP0007-DUP-1');
+test('lo que Parranda pone sin conexión (client1, uuid) y los -DUP-n NO entran', () => {
+  for (const x of ['client1', 'client2', 'Client10', '0190a5e2-7c3b-7d4e-9a1f-3b6c8d9e0f12', 'SC08TCP0007-DUP-1']) {
+    assert.equal(codigoDeCliente(x), null, x);
+  }
 });
 
 test('el numérico de los archivos viejos sigue entrando', () => {
