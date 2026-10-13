@@ -8,6 +8,7 @@ import { decidirActivos, type FilaDeParranda } from './clientesActivos';
 import { filasGanadoras } from './parrandaFilas';
 import { nombreComparable } from './nombreVendedor';
 import { comparteNombre } from './nombreParecido';
+import { esConsumoPropio } from './consumoPropio';
 
 const PARRANDA_URL = process.env.PARRANDA_API_URL || 'https://ccsa.retool.com/url/procovar';
 const PARRANDA_KEY = process.env.PARRANDA_API_KEY || ''; // SECRETO: solo por env (nunca en repo)
@@ -301,6 +302,8 @@ export async function processParrandaSync(
         !!actual &&
         actual.activo &&
         nuevoNombre !== actual.nombre &&
+        // «CONSUMO PROPIO …» se reconoce por el nombre: PEDIDO la trata aparte (filtro, reportes).
+        !esConsumoPropio(actual.nombre) &&
         // El `-DUP-n` es el código con que Parranda marca a un duplicado: no identifica a nadie.
         !/-DUP-/i.test(geoData.codigo ?? '') &&
         comparteNombre(actual.nombre, nombre) &&
