@@ -1,0 +1,81 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import { decidirActivos, type ClienteBase, type FilaDeParranda } from '../src/lib/clientesActivos';
+
+const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+const S = 'STG';
+const cli = (id: string, nombre: string, codigo: string | null, activo = true): ClienteBase => ({ id, nombre, sucursalId: S, codigo, activo });
+const fila = (nombre: string, codigo: string | null): FilaDeParranda => ({ sucursalId: S, nombre, codigo });
+// Relleno para pasar el mínimo de filas por sucursal sin ensuciar cada caso.
+const relleno = (n: number) => Array.from({ length: n }, (_, i) => ({ c: cli(`r${i}`, `RELLENO ${i}`, `C${i}`), f: fila(`Relleno ${i}`, `C${i}`) }));
+
+test('EL CASO DE DAGMARIS: Parranda renombra a «V3» conservando el código; la ficha vieja queda inactiva y el código pasa a la viva', () => {
+  const r = relleno(60);
+  const d = decidirActivos(
+    [...r.map((x) => x.c), cli('vieja', 'DAGMARIS ZAMBRANA MATOS', 'SC06TCP0169'), cli('viva', 'DAGMARIS ZAMBRANA MATOS V3', null)],
+    [...r.map((x) => x.f), fila('Dagmaris Zambrana Matos V3', 'SC06TCP0169')],
+    norm,
+  );
+
+  assert.deepEqual(d.desactivar, ['vieja']);
+  assert.deepEqual(d.codigosMovidos, [{ de: 'vieja', para: 'viva', codigo: 'SC06TCP0169' }]);
+});
+
+test('un cliente con código que Parranda ya no manda se desactiva', () => {
+  const r = relleno(60);
+  const d = decidirActivos([...r.map((x) => x.c), cli('x', 'CLIENTE VIEJO', 'SC01TCP0001')], r.map((x) => x.f), norm);
+
+  assert.deepEqual(d.desactivar, ['x']);
+});
+
+test('uno que Parranda renombró SIN que nadie creara otra ficha sigue activo (casa por código)', () => {
+  const r = relleno(60);
+  const d = decidirActivos([...r.map((x) => x.c), cli('a', 'NOMBRE VIEJO', 'SC01TCP0002')], [...r.map((x) => x.f), fila('Nombre Nuevo', 'SC01TCP0002')], norm);
+
+  assert.deepEqual(d.desactivar, []);
+});
+
+test('el cliente nacido de un pedido, sin código, nunca se desactiva', () => {
+  const r = relleno(60);
+  const d = decidirActivos([...r.map((x) => x.c), cli('p', 'SOLO DE PEDIDOS', null)], r.map((x) => x.f), norm);
+
+  assert.deepEqual(d.desactivar, []);
+});
+
+test('un inactivo que reaparece en Parranda se reactiva', () => {
+  const r = relleno(60);
+  const d = decidirActivos([...r.map((x) => x.c), cli('v', 'VUELVE', 'SC01TCP0003', false)], [...r.map((x) => x.f), fila('Vuelve', 'SC01TCP0003')], norm);
+
+  assert.deepEqual(d.reactivar, ['v']);
+});
+
+test('una sucursal que Parranda no manda (Palma, Granma, Moa) no se toca', () => {
+  const r = relleno(60);
+  const otra: ClienteBase = { id: 'pls', nombre: 'DE PALMA', sucursalId: 'PLS', codigo: 'PS01TCP0001', activo: true };
+  const d = decidirActivos([...r.map((x) => x.c), otra], r.map((x) => x.f), norm);
+
+  assert.deepEqual(d.desactivar, []);
+});
+
+test('si faltan demasiados se sospecha de Parranda y no se desactiva a nadie', () => {
+  const r = relleno(60);
+  const muchos = Array.from({ length: 50 }, (_, i) => cli(`m${i}`, `AUSENTE ${i}`, `Z${i}`));
+  const d = decidirActivos([...r.map((x) => x.c), ...muchos], r.map((x) => x.f), norm);
+
+  assert.deepEqual(d.desactivar, []);
+  assert.equal(d.avisos.length, 1);
+});
+
+test('con muy pocas filas de una sucursal no se desactiva a nadie', () => {
+  const d = decidirActivos([cli('a', 'A', 'C1'), cli('b', 'B', 'C2')], [fila('A', 'C1')], norm);
+
+  assert.deepEqual(d.desactivar, []);
+});
+
+test('no vuelve a desactivar al que ya está inactivo', () => {
+  const r = relleno(60);
+  const d = decidirActivos([...r.map((x) => x.c), cli('x', 'YA INACTIVO', 'SC01TCP0009', false)], r.map((x) => x.f), norm);
+
+  assert.deepEqual(d.desactivar, []);
+});

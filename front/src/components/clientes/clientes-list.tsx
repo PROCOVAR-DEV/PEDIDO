@@ -66,6 +66,7 @@ const traerClientes =
     estadoCompra: string,
     vendedorId: string,
     falta: string,
+    activo: string,
   ) =>
   async (signal: AbortSignal): Promise<RespuestaClientes> => {
     const params = new URLSearchParams({
@@ -78,6 +79,7 @@ const traerClientes =
     if (estadoCompra) params.append("estadoCompra", estadoCompra);
     if (vendedorId) params.append("vendedorId", vendedorId);
     if (falta) params.append("falta", falta);
+    if (activo) params.append("activo", activo);
 
     const r = await fetch(`${getApiBaseUrl()}/clientes?${params}`, { signal });
 
@@ -105,6 +107,9 @@ export const ClientesList = () => {
   const [vendedorId, setVendedorId] = useState<string>("");
   // Qué dato falta: "", "telefono", "geo", "direccion", "municipio".
   const [falta, setFalta] = useState<string>("");
+  // Activos por defecto: los que Parranda ya no manda (inactivos) no tienen por qué estorbar en la
+  // lista de trabajo. «Todos» o «Inactivos» los enseña, con su pedido viejo y todo.
+  const [activo, setActivo] = useState<string>("1");
   const [vendedores, setVendedores] = useState<
     Array<{ id: string; nombre: string; clientes: number }>
   >([]);
@@ -128,8 +133,8 @@ export const ClientesList = () => {
     error,
     recargar: fetchClientes,
   } = usarClientes(
-    `clientes:${activeSucursalId ?? "todas"}:${page}:${debouncedSearch}:${municipio}:${estadoCompra}:${vendedorId}:${falta}`,
-    traerClientes(page, debouncedSearch, municipio, estadoCompra, vendedorId, falta),
+    `clientes:${activeSucursalId ?? "todas"}:${page}:${debouncedSearch}:${municipio}:${estadoCompra}:${vendedorId}:${falta}:${activo}`,
+    traerClientes(page, debouncedSearch, municipio, estadoCompra, vendedorId, falta, activo),
   );
 
   const clientes = datos?.data ?? SIN_CLIENTES;
@@ -195,7 +200,7 @@ export const ClientesList = () => {
   // significa nada en la siguiente. El store se encarga de pedir lo que falte.
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, municipio, estadoCompra, falta]);
+  }, [debouncedSearch, municipio, estadoCompra, falta, activo]);
 
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -252,6 +257,18 @@ export const ClientesList = () => {
               <SelectItem key="">Todos</SelectItem>
               <SelectItem key="Compra">Compra</SelectItem>
               <SelectItem key="No Compra">No Compra</SelectItem>
+            </Select>
+            <Select
+              label="Estado"
+              placeholder="Todos"
+              selectedKeys={activo ? [activo] : []}
+              size="lg"
+              variant="bordered"
+              onChange={(e) => setActivo(e.target.value)}
+            >
+              <SelectItem key="1">Activos</SelectItem>
+              <SelectItem key="0">Inactivos</SelectItem>
+              <SelectItem key="">Todos</SelectItem>
             </Select>
           </div>
           {/*
@@ -337,6 +354,12 @@ export const ClientesList = () => {
                           >
                             {cliente.codigo || "N/A"}
                           </Chip>
+                          {/* Parranda ya no lo manda. Sus pedidos viejos siguen aquí. */}
+                          {cliente.activo === false && (
+                            <Chip className="w-fit" color="danger" size="sm" variant="flat">
+                              Inactivo
+                            </Chip>
+                          )}
                           {/* Quién trajo al cliente: el vendedor de su pedido más
                               antiguo. No hay relación directa cliente->vendedor;
                               el api la resuelve mirando los pedidos. */}

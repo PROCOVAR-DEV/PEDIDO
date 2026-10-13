@@ -335,6 +335,11 @@ router.get('/', async (req, res) => {
     const estadoCompra = (req.query.estadoCompra as string)?.trim();
     if (municipio) where.municipio = municipio;
     if (estadoCompra) where.estadoCompra = estadoCompra;
+    // Activo o inactivo (Parranda ya no lo manda). `1` sólo activos, `0` sólo inactivos; sin
+    // parámetro, todos: las demás pantallas y la API no cambian.
+    const activoQ = (req.query.activo as string)?.trim();
+    if (activoQ === '1' || activoQ === 'true') where.activo = true;
+    else if (activoQ === '0' || activoQ === 'false') where.activo = false;
 
     // Filtro por VENDEDOR: "los clientes que trajo fulano".
     //

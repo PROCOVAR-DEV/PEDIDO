@@ -480,6 +480,13 @@ model Cliente {
   geoFuente String?
   geoAt     DateTime?
 
+  /// Activo o inactivo. Parranda desactiva clientes sin avisar: simplemente DEJA DE MANDARLOS. La
+  /// sincronización los marca inactivos cuando una pasada completa ya no los ve, y vuelven a
+  /// activos si reaparecen. Un inactivo no sale por defecto en la lista de clientes ni en lo que
+  /// PEDIDO entrega al reparto; sus pedidos antiguos siguen estando.
+  activo         Boolean   @default(true)
+  desactivadoAt  DateTime?
+
   /**
    * El teléfono del cliente. Hasta ahora sólo vivía en el PEDIDO.
    * Eso hacía imposible contestar "¿tienes el teléfono de este cliente?" sin abrir
@@ -497,6 +504,7 @@ model Cliente {
   pedidos   Pedido[]
 
   @@unique([sucursalId, codigo])
+  @@index([activo])
   // El nombre identifica al cliente dentro de su sucursal (asi lo busca la importacion).
   // Sin este unico, dos pedidos del mismo cliente importados a la vez creaban el cliente
   // dos veces, y el pedido salia con folio -1, -2... en vez de actualizarse.

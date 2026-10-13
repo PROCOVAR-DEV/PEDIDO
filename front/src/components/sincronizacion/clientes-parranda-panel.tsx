@@ -65,6 +65,12 @@ interface SyncRun {
     erroresDetalle?: string[];
     /** Códigos que ya tenía otro cliente de la misma sucursal. */
     choquesDeCodigo?: number;
+    /** Clientes que Parranda ya no manda: pasaron a INACTIVOS (no se borra nada). */
+    desactivados?: number;
+    /** Inactivos que Parranda volvió a mandar. */
+    reactivados?: number;
+    /** Códigos que pasaron de una ficha inactiva a la ficha viva. */
+    codigosMovidos?: number;
     /** Códigos con el prefijo de otra sucursal. */
     prefijosAjenos?: number;
     /** Lo que hay que enseñarle a Parranda, con nombres. */
@@ -305,6 +311,8 @@ export const ClientesParrandaPanel = () => {
                           : ""}
                         {" · "}
                         {s.resultado.conGeo} geo · {s.resultado.errores} err
+                        {s.resultado.desactivados ? ` · ${s.resultado.desactivados} pasaron a inactivos` : ""}
+                        {s.resultado.reactivados ? ` · ${s.resultado.reactivados} reactivados` : ""}
                       </span>
                     )}
                     {s.error && <span className="text-danger truncate">{s.error}</span>}
@@ -430,6 +438,12 @@ export const ClientesParrandaPanel = () => {
                 : ""}
               {syncVisto?.resultado?.choquesDeCodigo
                 ? ` · ${syncVisto.resultado.choquesDeCodigo} códigos repetidos`
+                : ""}
+              {syncVisto?.resultado?.desactivados
+                ? ` · ${syncVisto.resultado.desactivados} pasaron a inactivos`
+                : ""}
+              {syncVisto?.resultado?.codigosMovidos
+                ? ` · ${syncVisto.resultado.codigosMovidos} códigos pasaron a la ficha viva`
                 : ""}
               {syncVisto?.resultado?.prefijosAjenos
                 ? ` · ${syncVisto.resultado.prefijosAjenos} con prefijo de otra sucursal`

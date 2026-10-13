@@ -4,6 +4,7 @@
 // plano (secuencial, con pausa anti-ban), sin golpear la DB desde el request.
 import prisma from '../prismaClient';
 import { emitEvent } from './events';
+import { decidirActivos, type FilaDeParranda } from './clientesActivos';
 
 const PARRANDA_URL = process.env.PARRANDA_API_URL || 'https://ccsa.retool.com/url/procovar';
 const PARRANDA_KEY = process.env.PARRANDA_API_KEY || ''; // SECRETO: solo por env (nunca en repo)
@@ -101,6 +102,12 @@ export interface ParrandaSyncResult {
   erroresDetalle: string[];
   /** Códigos que ya tenía otro cliente de la misma sucursal. */
   choquesDeCodigo: number;
+  /** Clientes que Parranda ya no manda y se pasaron a INACTIVOS (no se borra nada). */
+  desactivados: number;
+  /** Inactivos que Parranda volvió a mandar. */
+  reactivados: number;
+  /** Códigos que pasaron de una ficha inactiva a la ficha viva que Parranda ya nombra con él. */
+  codigosMovidos: number;
   /** Códigos con el prefijo de otra sucursal. */
   prefijosAjenos: number;
   /**
@@ -205,7 +212,10 @@ export async function processParrandaSync(
   const r: ParrandaSyncResult = {
     paginas: 0, total: 0, creados: 0, actualizados: 0, sinCambios: 0, conGeo: 0, sinGeo: 0, sinSucursal: 0, errores: 0,
     erroresDetalle: [], cambios: [], choquesDeCodigo: 0, prefijosAjenos: 0, avisos: [],
+    desactivados: 0, reactivados: 0, codigosMovidos: 0,
   };
+  // Lo que Parranda mandó en esta pasada, para decidir al final quién ya no está.
+  const delFeed: FilaDeParranda[] = [];
 
   let offset = 0;
   for (;;) {
@@ -222,6 +232,8 @@ export async function processParrandaSync(
 
         const nombre = String(c.cliente ?? '').toUpperCase().trim();
         if (!nombre) { r.errores++; continue; }
+
+        delFeed.push({ sucursalId, nombre, codigo: c.codigo ? String(c.codigo).trim() : null });
 
         const { lat, lng } = parseGeo(c.geolocalizacion);
         if (lat != null && lng != null) r.conGeo++; else r.sinGeo++;
@@ -355,8 +367,51 @@ export async function processParrandaSync(
     await new Promise((res) => setTimeout(res, PAUSA_MS)); // pausa anti-ban
   }
 
+  // ACTIVOS E INACTIVOS. Sólo llegamos aquí si se recorrieron TODAS las páginas: si Parranda
+  // fallara a mitad, la excepción sale antes y nadie se desactiva por una pasada cortada.
+  // Se marcan inactivos y NO se borran: los pedidos viejos siguen colgando de ellos.
+  try {
+    const frescos = await prisma.cliente.findMany({ select: { id: true, nombre: true, sucursalId: true, codigo: true, activo: true } });
+    const d = decidirActivos(frescos, delFeed, norm);
+
+    r.avisos.push(...d.avisos.slice(0, Math.max(0, 30 - r.avisos.length)));
+
+    // El código de la ficha vieja pasa a la viva: primero se libera, porque (sucursal, código)
+    // es único.
+    for (const m of d.codigosMovidos) {
+      try {
+        await prisma.$transaction([
+          prisma.cliente.update({ where: { id: m.de }, data: { codigo: null } }),
+          prisma.cliente.update({ where: { id: m.para }, data: { codigo: m.codigo } }),
+        ]);
+        r.codigosMovidos++;
+      } catch (e) {
+        r.errores++;
+        if (r.erroresDetalle.length < 5) r.erroresDetalle.push(`mover código ${m.codigo}: ${(e as Error)?.message}`);
+      }
+    }
+
+    for (let i = 0; i < d.desactivar.length; i += 500) {
+      const lote = d.desactivar.slice(i, i + 500);
+      const x = await prisma.cliente.updateMany({ where: { id: { in: lote }, activo: true }, data: { activo: false, desactivadoAt: new Date() } });
+
+      r.desactivados += x.count;
+    }
+
+    for (let i = 0; i < d.reactivar.length; i += 500) {
+      const lote = d.reactivar.slice(i, i + 500);
+      const x = await prisma.cliente.updateMany({ where: { id: { in: lote }, activo: false }, data: { activo: true, desactivadoAt: null } });
+
+      r.reactivados += x.count;
+    }
+  } catch (e) {
+    // Es información derivada: si falla no se pierde ningún dato, sólo queda sin marcar.
+    r.errores++;
+    if (r.erroresDetalle.length < 5) r.erroresDetalle.push(`activos/inactivos: ${(e as Error)?.message}`);
+  }
+
   // Avisar a delivery: hay clientes nuevos/geolocalizados -> el mirror se re-sincroniza.
-  if (r.creados > 0 || r.actualizados > 0) {
+  if (r.creados > 0 || r.actualizados > 0 || r.desactivados > 0 || r.reactivados > 0) {
     // Y avisar al front por SSE: el sync corre en el worker, así que sin este evento la
     // lista de clientes se queda con los datos viejos hasta que alguien recargue.
     emitEvent('cliente', { accion: 'sync-parranda' });

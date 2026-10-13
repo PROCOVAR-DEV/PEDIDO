@@ -690,12 +690,17 @@ router.get('/clients', async (req, res) => {
   // Quien necesite sólo los cotizables mira `latitud`, que viene en cada fila, o pide
   // `?conGeo=1`. Es mejor que le llegue el cliente y decida, a que se lo escondamos.
   const soloConGeo = req.query.conGeo === '1' || req.query.conGeo === 'true';
+  // Los INACTIVOS (Parranda ya no los manda) no se entregan: el reparto borra de su espejo lo que
+  // deja de venir. Se piden con `?inactivos=1`, y si se piden por `ids` se dan igual: quien pide
+  // un cliente concreto lo quiere aunque esté inactivo (sus pedidos viejos cuelgan de él).
+  const conInactivos = req.query.inactivos === '1' || req.query.inactivos === 'true';
 
   const clientes = await prisma.cliente.findMany({
     where: {
       ...sucursalScope,
       ...(pidioIds ? { id: { in: ids } } : {}),
       ...(soloConGeo ? { latitud: { not: null }, longitud: { not: null } } : {}),
+      ...(pidioIds || conInactivos ? {} : { activo: true }),
       ...(since ? { updatedAt: { gt: new Date(since) } } : {}),
       // Por vendedor: los que tienen ALGÚN pedido suyo.
       ...(vendedor
@@ -828,6 +833,7 @@ router.get('/clients', async (req, res) => {
     municipio: c.municipio,
     tipoCliente: c.tipoCliente,
     estadoCompra: c.estadoCompra,
+    activo: c.activo,
     latitud: c.latitud,
     longitud: c.longitud,
     geolocalizacion: c.geolocalizacion,
