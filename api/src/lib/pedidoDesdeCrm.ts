@@ -9,12 +9,14 @@
  *
  * # El folio
  *
- * El del CRM (`A001-20261013-000042`) ES el folio del pedido, tal cual: Jose, 13/10/2026,
- * «el CRM va a ser nuestro Retool». Es el que se copia en la nota de la factura, y el
- * cotejo lo reconoce (`folioDeLaNota` en `emparejarFactura.ts`).
+ * El del CRM (`A001-20261013-000042`) ES el folio del pedido, tal cual. Es el que se
+ * copia en la nota de la factura, y el cotejo lo reconoce (`folioDeLaNota` en
+ * `emparejarFactura.ts`).
  *
- * Nuestro sufijo `-1`/`-2` no entra en juego: un pedido del CRM es UN cliente, así que su
- * folio nunca se comparte ni se toca.
+ * Es un camino AÑADIDO: Retool → n8n → `/orders/bulk` sigue exactamente igual, con sus
+ * folios `P…` y nuestro sufijo `-1`/`-2` (Jose, 13/10/2026: «tenemos que tener las dos
+ * opciones»). Un pedido del CRM es UN cliente, así que su folio no lleva sufijo, y no
+ * puede confundirse con uno de Retool: la fecha de ellos son seis cifras, la de éste ocho.
  */
 import { Prisma } from '@prisma/client';
 import { nombreComparable, codigoComparable } from './nombreVendedor';
@@ -37,7 +39,6 @@ export interface LineaCrm {
 }
 
 export interface PedidoCrm {
-  crmPedidoId: string;
   folio: string;
   sucursal: string;
   fecha: string;
@@ -55,10 +56,9 @@ export interface Campo {
   mensaje: string;
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 /** El folio del CRM (D-25, P-01 todavía abierta): XXXX-YYYYMMDD-CCCCCC. */
-const FOLIO_CRM = /^[A-Z0-9]{4}-\d{8}-\d{6}$/;
+export const FORMA_FOLIO_CRM = /^[A-Z0-9]{4}-\d{8}-\d{6}$/;
 /** Más líneas que esto no es un pedido de un kiosco: es un error de quien manda. */
 const MAX_LINEAS = 500;
 
@@ -80,11 +80,8 @@ export function leerPedidoCrm(cuerpo: unknown): { ok: true; pedido: PedidoCrm } 
   const campos: Campo[] = [];
   const mal = (campo: string, mensaje: string) => campos.push({ campo, mensaje });
 
-  const crmPedidoId = texto(b.crmPedidoId).toLowerCase();
-  if (!UUID.test(crmPedidoId)) mal('crmPedidoId', 'obligatorio, un uuid');
-
   const folio = texto(b.folio).toUpperCase();
-  if (!FOLIO_CRM.test(folio)) mal('folio', 'obligatorio, con la forma XXXX-YYYYMMDD-CCCCCC');
+  if (!FORMA_FOLIO_CRM.test(folio)) mal('folio', 'obligatorio, con la forma XXXX-YYYYMMDD-CCCCCC');
 
   const sucursal = texto(b.sucursal).toUpperCase();
   if (!sucursal) mal('sucursal', 'obligatorio, el código (CAM, HAB…)');
@@ -102,7 +99,7 @@ export function leerPedidoCrm(cuerpo: unknown): { ok: true; pedido: PedidoCrm } 
   // aceptara, todos los que no lo tienen acabarían siendo el MISMO vendedor aquí.
   if (!/^[A-Z0-9]{4}$/.test(vendedor.codigo) || vendedor.codigo === 'LOC0') {
     mal('vendedor.codigo', 'obligatorio: el código de vendedor de 4 caracteres de Accesos');
-  } else if (FOLIO_CRM.test(folio) && !folio.startsWith(`${vendedor.codigo}-`)) {
+  } else if (FORMA_FOLIO_CRM.test(folio) && !folio.startsWith(`${vendedor.codigo}-`)) {
     // El folio empieza por el código del vendedor: si no casan, uno de los dos está mal.
     mal('vendedor.codigo', `no casa con el folio ${folio}`);
   }
@@ -166,7 +163,7 @@ export function leerPedidoCrm(cuerpo: unknown): { ok: true; pedido: PedidoCrm } 
   return {
     ok: true,
     pedido: {
-      crmPedidoId, folio, sucursal, fecha, fechaComprometida,
+      folio, sucursal, fecha, fechaComprometida,
       vendedor, cliente, puntoDeVenta, domicilio,
       detalles: textoONulo(b.detalles),
       lineas,
@@ -189,30 +186,23 @@ const esUnicoRepetido = (e: unknown) =>
   e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
 
 /**
- * Da de alta un pedido del CRM, o devuelve el que ya entró con ese uuid.
+ * Da de alta un pedido del CRM, o devuelve el que ya entró con ese folio.
  *
- * Idempotente: el integrador reenvía cuando no le llega la respuesta, y el segundo envío
- * tiene que contestar lo mismo que el primero. 409 sólo si el FOLIO del CRM ya lo tiene
- * otro pedido —eso no lo arregla reenviar—. 422 cuando falta algo de este lado (la
- * sucursal, un vendedor de baja): tampoco.
+ * Idempotente por el FOLIO: el del CRM es único allí (y aquí lo protege el único
+ * `(sucursal, folio, vendedor)` de siempre), así que el mismo folio es el mismo pedido.
+ * El integrador reenvía cuando no le llega la respuesta, y el segundo envío contesta lo
+ * mismo que el primero. 409 si ese folio lo tiene un pedido de OTRO vendedor o sucursal
+ * —eso no lo arregla reenviar—. 422 cuando falta algo de este lado (la sucursal, un
+ * vendedor de baja): tampoco.
  */
 export async function recibirPedidoCrm(p: PedidoCrm): Promise<Recepcion> {
   const prisma = await base();
-  // Por uuid O por folio en UNA consulta: con dos, un envío simultáneo del mismo pedido
-  // podía entrar entre las dos y salir como «folio de otro pedido».
-  const yaEsta = await prisma.pedido.findFirst({
-    where: { OR: [{ crmPedidoId: p.crmPedidoId }, { folio: p.folio }] },
-  });
-  if (yaEsta?.crmPedidoId === p.crmPedidoId) {
-    return { status: 200, cuerpo: { pedidoId: yaEsta.id, folio: yaEsta.folio, duplicado: true } };
-  }
-  const otroConEseFolio = yaEsta;
-  if (otroConEseFolio) {
-    return { status: 409, cuerpo: { error: `El folio ${p.folio} ya lo tiene otro pedido en PEDIDO (${otroConEseFolio.id}).` } };
-  }
-
   const sucursal = await prisma.sucursal.findUnique({ where: { codigo: p.sucursal } });
   if (!sucursal) return { status: 422, cuerpo: { error: `La sucursal ${p.sucursal} no existe en PEDIDO.` } };
+
+  const yaEsta = await prisma.pedido.findFirst({ where: { folio: p.folio }, include: { vendedor: true } });
+  if (yaEsta) return mismoOtro(yaEsta, sucursal.id, p);
+
   // Cada instalación de PEDIDO puede ser de UNA sucursal (config.json): lo de otra no entra.
   // (Tarde también: `sucursalLocal` lee `__dirname`, que en las pruebas no existe.)
   const local = (await import('./sucursalLocal')).readConfiguredSucursalId();
@@ -231,7 +221,6 @@ export async function recibirPedidoCrm(p: PedidoCrm): Promise<Recepcion> {
     const creado = await prisma.pedido.create({
       data: {
         folio: p.folio,
-        crmPedidoId: p.crmPedidoId,
         sucursalId: sucursal.id,
         vendedorId: vendedor.id,
         clienteId: cliente.id,
@@ -263,11 +252,24 @@ export async function recibirPedidoCrm(p: PedidoCrm): Promise<Recepcion> {
   } catch (e) {
     // Dos envíos del mismo pedido a la vez: el otro ganó. Se devuelve el suyo.
     if (!esUnicoRepetido(e)) throw e;
-    const ganador = await prisma.pedido.findUnique({ where: { crmPedidoId: p.crmPedidoId } });
-    if (ganador) return { status: 200, cuerpo: { pedidoId: ganador.id, folio: ganador.folio, duplicado: true } };
+    const ganador = await prisma.pedido.findFirst({ where: { folio: p.folio }, include: { vendedor: true } });
+    if (ganador) return mismoOtro(ganador, sucursal.id, p);
 
     return { status: 409, cuerpo: { error: `El folio ${p.folio} ya lo tiene otro pedido.` } };
   }
+}
+
+/** Ese folio ya está: es el mismo pedido si es de la misma sucursal y del mismo vendedor. */
+function mismoOtro(
+  x: { id: string; folio: string; sucursalId: string | null; vendedor: { codigo: string | null } | null },
+  sucursalId: string,
+  p: PedidoCrm,
+): Recepcion {
+  if (x.sucursalId === sucursalId && x.vendedor?.codigo === codigoComparable(p.vendedor.codigo)) {
+    return { status: 200, cuerpo: { pedidoId: x.id, folio: x.folio, duplicado: true } };
+  }
+
+  return { status: 409, cuerpo: { error: `El folio ${p.folio} ya lo tiene otro pedido en PEDIDO (${x.id}), de otra sucursal o vendedor.` } };
 }
 
 /**
@@ -331,10 +333,9 @@ async function clienteDelCrm(p: PedidoCrm, sucursalId: string): Promise<{ id: st
 }
 
 export interface EstadoPedidoCrm {
-  crmPedidoId: string;
+  folio: string;
   existe: boolean;
   pedidoId?: string;
-  folio?: string;
   estado?: string | null;
   facturaEstado?: string | null;
   facturaNumero?: string | null;
@@ -346,26 +347,74 @@ export interface EstadoPedidoCrm {
 }
 
 /**
- * En qué punto está cada pedido que mandó el CRM. `existe: false` es que aquí ya no está:
- * alguien lo borró desde el panel, que en PEDIDO es anularlo.
+ * En qué punto está cada pedido que mandó el CRM, por su folio. `existe: false` es que
+ * aquí ya no está: alguien lo borró desde el panel, que en PEDIDO es anularlo. Sólo se
+ * contesta por folios con la forma del CRM: esto no es una puerta para leer los de Retool.
  */
-export async function estadoDePedidosCrm(ids: string[]): Promise<EstadoPedidoCrm[]> {
+export async function estadoDePedidosCrm(folios: string[]): Promise<EstadoPedidoCrm[]> {
   const prisma = await base();
+  const delCrm = folios.filter((f) => FORMA_FOLIO_CRM.test(f));
   const pedidos = await prisma.pedido.findMany({
-    where: { crmPedidoId: { in: ids } },
+    where: { folio: { in: delCrm } },
     select: {
-      id: true, crmPedidoId: true, folio: true, estado: true,
+      id: true, folio: true, estado: true,
       facturaEstado: true, facturaNumero: true, facturaAt: true,
       estadoEntrega: true, estadoEntregaAt: true, completedAt: true, updatedAt: true,
     },
   });
-  const porId = new Map(pedidos.map((x) => [x.crmPedidoId, x]));
+  const porFolio = new Map(pedidos.map((x) => [x.folio, x]));
 
-  return ids.map((crmPedidoId) => {
-    const x = porId.get(crmPedidoId);
-    if (!x) return { crmPedidoId, existe: false };
-    const { id, crmPedidoId: _c, ...resto } = x;
+  return folios.map((folio) => {
+    const x = porFolio.get(folio);
+    if (!x || !FORMA_FOLIO_CRM.test(folio)) return { folio, existe: false };
+    const { id, folio: _f, ...resto } = x;
 
-    return { crmPedidoId, existe: true, pedidoId: id, ...resto };
+    return { folio, existe: true, pedidoId: id, ...resto };
   });
+}
+
+/**
+ * ¿Son las mismas líneas? Se comparan las CANTIDADES (cuántas líneas y cuántas unidades
+ * cada una), no los nombres: Retool usa los de Parranda y el CRM los suyos, y comparando
+ * nombres no casaría nunca.
+ */
+export function mismasLineas(a: Array<{ unidades: number }>, b: Array<{ unidades: number }>): boolean {
+  const orden = (x: Array<{ unidades: number }>) => x.map((l) => l.unidades).sort((m, n) => m - n).join(',');
+
+  return a.length > 0 && orden(a) === orden(b);
+}
+
+export interface PosibleDuplicado {
+  crm: { pedidoId: string; folio: string };
+  retool: { pedidoId: string; folio: string };
+  clienteId: string | null;
+}
+
+/**
+ * INFORME, sólo lectura: pedidos del CRM que parecen el mismo que uno de Retool.
+ *
+ * Mientras conviven (Jose, 13/10/2026: «tenemos que tener las dos opciones»), un vendedor
+ * puede meter el mismo pedido por los dos lados y aparecería dos veces. Aquí sólo se
+ * LISTA: mismo cliente y sucursal, el mismo día o el de al lado, las mismas cantidades. No
+ * bloquea, no borra y no se mete en ningún flujo: quién sobra lo decide una persona.
+ */
+export async function posiblesDuplicados(desde: Date, hasta: Date): Promise<PosibleDuplicado[]> {
+  const prisma = await base();
+  const margen = 36 * 3600e3;
+  const pedidos = await prisma.pedido.findMany({
+    where: { fecha: { gte: new Date(desde.getTime() - margen), lte: new Date(hasta.getTime() + margen) }, clienteId: { not: null } },
+    select: { id: true, folio: true, fecha: true, sucursalId: true, clienteId: true, items: { select: { unidades: true } } },
+  });
+  const salida: PosibleDuplicado[] = [];
+
+  for (const c of pedidos) {
+    if (!FORMA_FOLIO_CRM.test(c.folio) || c.fecha < desde || c.fecha > hasta) continue;
+    for (const r of pedidos) {
+      if (FORMA_FOLIO_CRM.test(r.folio) || r.clienteId !== c.clienteId || r.sucursalId !== c.sucursalId) continue;
+      if (Math.abs(r.fecha.getTime() - c.fecha.getTime()) > margen || !mismasLineas(r.items, c.items)) continue;
+      salida.push({ crm: { pedidoId: c.id, folio: c.folio }, retool: { pedidoId: r.id, folio: r.folio }, clienteId: c.clienteId });
+    }
+  }
+
+  return salida;
 }

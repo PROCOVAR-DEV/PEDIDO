@@ -300,10 +300,6 @@ model Pedido {
    */
   completadoPorId    String?
   completadoPor      String?
-  /// El pedido del CRM del que viene (su uuid), si entró por `POST /integration/crm/pedidos`.
-  /// Es la llave de la idempotencia: el integrador del CRM reenvía hasta que le contestan,
-  /// y reenviar el mismo pedido tiene que devolver ESTE, no crear otro.
-  crmPedidoId        String?                @unique
   items              PedidoItem[]
   copias             CopiaPortapapeles[]
   domicilioGrupos    PedidoDomicilioGrupo[]

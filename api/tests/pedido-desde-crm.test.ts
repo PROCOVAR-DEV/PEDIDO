@@ -9,11 +9,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { importeDeLinea, leerPedidoCrm } from '../src/lib/pedidoDesdeCrm';
-import { folioDeLaNota, prefijoDeFolio } from '../src/lib/emparejarFactura';
+import { importeDeLinea, leerPedidoCrm, mismasLineas } from '../src/lib/pedidoDesdeCrm';
+import { facturasPorFolio, folioDeLaNota, prefijoDeFolio } from '../src/lib/emparejarFactura';
 
 const bueno = () => ({
-  crmPedidoId: '0192f1e2-3b4c-7d5e-8f60-718293a4b5c6',
   folio: 'A001-20261013-000042',
   sucursal: 'cam',
   fecha: '2026-10-13',
@@ -37,14 +36,13 @@ test('un pedido bueno entra limpio: códigos en mayúsculas y nulos donde no hay
 
 test('devuelve TODOS los campos que fallan de una vez', () => {
   const b: any = bueno();
-  b.crmPedidoId = 'no-es-uuid';
   b.folio = 'PDG26-260906-2992';
   b.fecha = '13/10/2026';
   b.lineas = [{ producto: '', cantidad: 0 }];
   const r = leerPedidoCrm(b);
   assert.equal(r.ok, false);
   const campos = 'campos' in r ? r.campos.map((c) => c.campo) : [];
-  assert.deepEqual(campos, ['crmPedidoId', 'folio', 'fecha', 'lineas[0].producto', 'lineas[0].cantidad']);
+  assert.deepEqual(campos, ['folio', 'fecha', 'lineas[0].producto', 'lineas[0].cantidad']);
 });
 
 test('sin código de vendedor (LOC0) no entra: todos los que no lo tienen serían el mismo', () => {
@@ -88,4 +86,22 @@ test('el importe de la línea sólo si vino en CUP', () => {
   assert.equal(importeDeLinea(l), 30.32);
   assert.equal(importeDeLinea({ ...l, moneda: 'MLC' }), null);
   assert.equal(importeDeLinea({ ...l, precioUnitario: null }), null);
+});
+
+test('mismas líneas: por cantidades, sin mirar nombres ni orden', () => {
+  assert.equal(mismasLineas([{ unidades: 24 }, { unidades: 6 }], [{ unidades: 6 }, { unidades: 24 }]), true);
+  assert.equal(mismasLineas([{ unidades: 24 }], [{ unidades: 24 }, { unidades: 6 }]), false);
+  assert.equal(mismasLineas([{ unidades: 24 }], [{ unidades: 12 }]), false);
+  assert.equal(mismasLineas([], []), false);
+});
+
+test('Retool y el CRM conviven: una nota de cada uno casa con SU pedido', () => {
+  const porFolio = facturasPorFolio([
+    { operNumber: '100', nota: 'P-PDG26-261013-2992; V-DIANGO GOLA; C-LH15;' },
+    { operNumber: '101', nota: 'P-PDG26-261013-2992-1; V-DIANGO GOLA; C-LH16;' },
+    { operNumber: '102', nota: 'P-A001-20261013-000042; V-ANA PEREZ; C-LH15;' },
+  ]);
+  assert.deepEqual([...porFolio.get('PDG26-261013-2992')!], ['100']);
+  assert.deepEqual([...porFolio.get('PDG26-261013-2992-1')!], ['101']);
+  assert.deepEqual([...porFolio.get('A001-20261013-000042')!], ['102']);
 });

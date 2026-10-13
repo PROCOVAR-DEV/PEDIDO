@@ -77,11 +77,12 @@ const SUELTO = new RegExp(String.raw`\b(${CUERPO})\b`, 'i');
 
 /**
  * El folio del CRM: `A001-20261013-000042` (código de vendedor de 4, día con el año
- * entero, consecutivo de 6). Desde el 13/10/2026 es EL folio de los pedidos: lo genera el
- * CRM, que sustituye a Retool (Jose: «el CRM va a ser nuestro Retool»).
+ * entero, consecutivo de 6). Desde el 13/10/2026 los pedidos del CRM entran con su folio
+ * (`POST /integration/crm/pedidos`), A LA VEZ que los de Retool por n8n, que no cambian.
  *
- * Se mira ANTES que el de Retool y, si la nota trae algo con su forma, ya no se mira el
- * otro: el patrón de Retool, suelto, se come un trozo de uno del CRM
+ * Sólo AÑADE: una nota sin nada con esta forma sigue exactamente el camino de antes. Si
+ * la trae, se lee como del CRM y no se prueba el de Retool, porque ese, suelto, se come
+ * un trozo de uno del CRM
  * (`AB12-20261013-000042` → `AB12-20261013`, con la fecha leída como «pegada») y ataría
  * la factura a un pedido que no existe o, peor, a otro.
  *
@@ -176,11 +177,14 @@ export function prefijoDeNota(folio: string): string | null {
 export function prefijoDeFolio(folio: string): string | null {
   const partes = (folio || '').trim().toUpperCase().split('-');
 
+  // El del CRM (`P-A001-20261013-000042`): los de ese vendedor ese día. Un folio de
+  // Retool no puede tener esta forma (su fecha son seis cifras), así que no les afecta.
+  const crm = /^P-([A-Z0-9]{4})-(\d{8})-\d{6}$/.exec((folio || '').trim().toUpperCase());
+  if (crm) return `P-${crm[1]}-${crm[2]}`;
+
   // P - nomenclador - fecha - número. Menos de cuatro trozos no es un folio nuestro.
-  // La fecha son seis cifras en los de Retool (`AAMMDD`) y ocho en los del CRM
-  // (`AAAAMMDD`): `P-A001-20261013` son los de ese vendedor ese día.
   if (partes.length < 4 || partes[0] !== 'P') return null;
-  if (!/^(\d{6}|\d{8})$/.test(partes[2])) return null;
+  if (!/^\d{6}$/.test(partes[2])) return null;
 
   return partes.slice(0, 3).join('-');
 }

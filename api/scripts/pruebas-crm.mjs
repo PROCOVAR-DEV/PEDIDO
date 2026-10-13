@@ -9,7 +9,7 @@
  *
  * Uso, contra una base Postgres VACÍA y desechable (borra pedidos, clientes y vendedores):
  *   npm run build && DATABASE_PROVIDER=postgres DATABASE_URL=postgresql://... npx prisma db push
- *   DATABASE_PROVIDER=postgres DATABASE_URL=postgresql://... npm run test:crm
+ *   DATABASE_PROVIDER=postgres DATABASE_URL=postgresql://... node --test scripts/pruebas-crm.mjs
  */
 
 import test from 'node:test'
@@ -23,12 +23,23 @@ const require = createRequire(import.meta.url)
 const express = require('express')
 const prisma = require('../dist/prismaClient.js').default
 const router = require('../dist/routes/integration.js').default
+const ordersRouter = require('../dist/routes/orders.js').default
+const { facturasPorFolio } = require('../dist/lib/emparejarFactura.js')
 
 const app = express()
 app.use(express.json())
 app.use('/integration', router)
+// El camino de Retool: n8n sube el CSV a /orders/bulk desde la red interna.
+app.use('/orders', ordersRouter)
 const servidor = await new Promise((ok) => { const s = app.listen(0, '127.0.0.1', () => ok(s)) })
-const BASE = `http://127.0.0.1:${servidor.address().port}/integration/crm/pedidos`
+const RAIZ = `http://127.0.0.1:${servidor.address().port}`
+const BASE = `${RAIZ}/integration/crm/pedidos`
+const post = (ruta, cuerpo) =>
+  fetch(`${RAIZ}${ruta}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': process.env.SERVICE_API_KEY },
+    body: JSON.stringify(cuerpo),
+  }).then(async (r) => ({ status: r.status, cuerpo: await r.json() }))
 
 const enviar = (cuerpo, clave = process.env.SERVICE_API_KEY) =>
   fetch(BASE, {
@@ -37,18 +48,16 @@ const enviar = (cuerpo, clave = process.env.SERVICE_API_KEY) =>
     body: JSON.stringify(cuerpo),
   }).then(async (r) => ({ status: r.status, cuerpo: await r.json() }))
 
-const estado = (ids) =>
+const estado = (folios) =>
   fetch(`${BASE}/estado`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': process.env.SERVICE_API_KEY },
-    body: JSON.stringify({ ids }),
+    body: JSON.stringify({ folios }),
   }).then((r) => r.json())
 
 let n = 0
-const uuid = () => `0192f1e2-3b4c-7d5e-8f60-${String(++n).padStart(12, '0')}`
 const pedido = (extra = {}) => ({
-  crmPedidoId: uuid(),
-  folio: `A001-20261013-${String(n).padStart(6, '0')}`,
+  folio: `A001-20261013-${String(++n).padStart(6, '0')}`,
   sucursal: 'CAM',
   fecha: '2026-10-13',
   vendedor: { codigo: 'A001', accesosId: 'u-1', nombre: 'Ana Pérez' },
@@ -88,7 +97,6 @@ test('entra con el folio del CRM tal cual; crea vendedor y cliente', async () =>
 
   const g = await prisma.pedido.findUnique({ where: { id: r.cuerpo.pedidoId }, include: { items: true, vendedor: true, cliente: true } })
   assert.equal(g.folio, p.folio)
-  assert.equal(g.crmPedidoId, p.crmPedidoId)
   assert.equal(g.costoDomicilio, 3.5)
   assert.equal(g.tasaDomicilio, 410)
   assert.equal(g.requiere_domicilio, true)
@@ -111,7 +119,7 @@ test('reenviar el mismo pedido devuelve el mismo, no otro', async () => {
   assert.equal(b.cuerpo.duplicado, true)
   assert.equal(b.cuerpo.pedidoId, a.cuerpo.pedidoId)
   assert.equal(b.cuerpo.folio, a.cuerpo.folio)
-  assert.equal(await prisma.pedido.count({ where: { crmPedidoId: p.crmPedidoId } }), 1)
+  assert.equal(await prisma.pedido.count({ where: { folio: p.folio } }), 1)
 })
 
 test('cinco envíos A LA VEZ del mismo pedido dejan uno', async () => {
@@ -120,7 +128,7 @@ test('cinco envíos A LA VEZ del mismo pedido dejan uno', async () => {
   assert.deepEqual(rs.map((r) => r.status).filter((s) => s === 201).length, 1)
   assert.ok(rs.every((r) => r.status === 200 || r.status === 201), JSON.stringify(rs.map((r) => r.cuerpo)))
   assert.equal(new Set(rs.map((r) => r.cuerpo.pedidoId)).size, 1)
-  assert.equal(await prisma.pedido.count({ where: { crmPedidoId: p.crmPedidoId } }), 1)
+  assert.equal(await prisma.pedido.count({ where: { folio: p.folio } }), 1)
 })
 
 test('ningún folio repetido y el cliente se reutiliza', async () => {
@@ -130,11 +138,12 @@ test('ningún folio repetido y el cliente se reutiliza', async () => {
   assert.equal(await prisma.vendedor.count(), 1)
 })
 
-test('el mismo folio del CRM con OTRO uuid es un 409, y no se crea nada', async () => {
+test('el mismo folio del CRM en OTRA sucursal es un 409, y no se crea nada', async () => {
   const antes = await prisma.pedido.count()
   const p = pedido()
   await enviar(p)
-  const r = await enviar({ ...p, crmPedidoId: uuid() })
+  await prisma.sucursal.upsert({ where: { codigo: 'HAB' }, create: { codigo: 'HAB', nombre: 'La Habana' }, update: {} })
+  const r = await enviar({ ...p, sucursal: 'HAB' })
   assert.equal(r.status, 409)
   assert.equal(await prisma.pedido.count(), antes + 1)
 })
@@ -165,17 +174,90 @@ test('el estado vuelve: factura, entrega, y `existe: false` si lo borraron aquí
     where: { id: cuerpo.pedidoId },
     data: { facturaEstado: 'igual', facturaNumero: '44830', facturaAt: new Date(), estado: 'completada', estadoEntrega: 'entregado', estadoEntregaAt: new Date() },
   })
-  const ninguno = uuid()
-  let r = await estado([p.crmPedidoId, ninguno])
-  assert.equal(r.pedidos.length, 2)
+  const ninguno = 'A001-20261013-999999'
+  let r = await estado([p.folio, ninguno, 'PDG26-261020-2992'])
+  assert.equal(r.pedidos.length, 3)
   assert.equal(r.pedidos[0].existe, true)
   assert.equal(r.pedidos[0].facturaNumero, '44830')
   assert.equal(r.pedidos[0].estadoEntrega, 'entregado')
   assert.equal(r.pedidos[0].folio, cuerpo.folio)
   assert.equal(r.pedidos[1].existe, false)
+  // Un folio de Retool no se contesta por aquí.
+  assert.equal(r.pedidos[2].existe, false)
 
   await prisma.pedidoItem.deleteMany({ where: { pedidoId: cuerpo.pedidoId } })
   await prisma.pedido.delete({ where: { id: cuerpo.pedidoId } })
-  r = await estado([p.crmPedidoId])
+  r = await estado([p.folio])
   assert.equal(r.pedidos[0].existe, false)
+})
+
+test('RETOOL Y EL CRM CONVIVEN: los dos entran y los dos casan con su factura de Ventra', async () => {
+  const cam = await prisma.sucursal.findUnique({ where: { codigo: 'CAM' } })
+  // El vendedor de Retool ya existe con su sucursal (sin ella, la ingesta lo deja «Sin asignar»).
+  await prisma.vendedor.create({ data: { codigo: 'diango.gola', nombre: 'DIANGO GOLA', sucursalId: cam.id } })
+
+  // Retool → n8n → /orders/bulk, como hoy: un folio con dos clientes = dos pedidos, el
+  // segundo con NUESTRO sufijo.
+  const fila = (cliente, producto, unidades) => ({
+    vendedor: 'DIANGO GOLA', cliente, folio: 'PDG26-261020-2992', producto, unidades, fecha: '2026-10-20',
+  })
+  const csv = await post('/orders/bulk?sync=1', {
+    records: [fila('Cafeteria Polo', 'PARRANDA 355ML', 24), fila('Kiosco Sol', 'PARRANDA 355ML', 12)],
+  })
+  assert.equal(csv.status, 200, JSON.stringify(csv.cuerpo))
+  const deRetool = await prisma.pedido.findMany({
+    where: { folio: { startsWith: 'PDG26-261020-2992' } }, orderBy: { folio: 'asc' },
+  })
+  assert.deepEqual(deRetool.map((x) => x.folio), ['PDG26-261020-2992', 'PDG26-261020-2992-1'])
+
+  // El CRM, por su lado, con su folio.
+  const p = pedido({ fecha: '2026-10-20', cliente: { codigo: 'CLI-9', nombre: 'Panaderia Luz' } })
+  p.folio = 'A001-20261020-000001'
+  const crm = await enviar(p)
+  assert.equal(crm.status, 201, JSON.stringify(crm.cuerpo))
+
+  // Las tres facturas, cada una con el folio que se copió en su nota, casan con SU pedido.
+  const porFolio = facturasPorFolio([
+    { operNumber: '9001', nota: `P-${deRetool[0].folio}; V-DIANGO GOLA;` },
+    { operNumber: '9002', nota: `P-${deRetool[1].folio}; V-DIANGO GOLA;` },
+    { operNumber: '9003', nota: `P-${crm.cuerpo.folio}; V-ANA PEREZ;` },
+  ])
+  const guardados = await prisma.pedido.findMany({ where: { folio: { in: [...porFolio.keys()] } } })
+  assert.equal(guardados.length, 3)
+
+  // Y la puerta de las facturas los marca a los dos (Retool por folio + vendedor, CRM igual).
+  const r = await post('/integration/orders/invoicing', {
+    facturas: [
+      { folio: deRetool[1].folio, vendedorCodigo: 'diango.gola', estado: 'igual', numero: '9002' },
+      { folio: crm.cuerpo.folio, vendedorCodigo: 'A001', estado: 'igual', numero: '9003' },
+    ],
+  })
+  assert.equal(r.status, 200, JSON.stringify(r.cuerpo))
+  assert.equal(r.cuerpo.rechazadas.length, 0, JSON.stringify(r.cuerpo.rechazadas))
+  const [a, b] = await Promise.all([
+    prisma.pedido.findUnique({ where: { id: deRetool[1].id } }),
+    prisma.pedido.findUnique({ where: { id: crm.cuerpo.pedidoId } }),
+  ])
+  assert.equal(a.facturaNumero, '9002')
+  assert.equal(b.facturaNumero, '9003')
+  // El hermano sin sufijo NO se llevó la factura del otro.
+  assert.equal((await prisma.pedido.findUnique({ where: { id: deRetool[0].id } })).facturaNumero, null)
+})
+
+test('el mismo pedido por Retool y por el CRM: entran los dos y el INFORME lo señala', async () => {
+  const p = pedido({ fecha: '2026-10-20', cliente: { codigo: 'CLI-1', nombre: 'Cafeteria Polo' } })
+  p.folio = 'A001-20261020-000002'
+  const r = await enviar(p)
+  assert.equal(r.status, 201)
+  const retool = await prisma.pedido.findFirst({ where: { folio: 'PDG26-261020-2992' } })
+  const informe = await fetch(`${RAIZ}/integration/crm/pedidos/duplicados?desde=2026-10-19&hasta=2026-10-21`, {
+    headers: { 'x-api-key': process.env.SERVICE_API_KEY },
+  }).then((x) => x.json())
+  assert.deepEqual(
+    informe.posiblesDuplicados.map((d) => [d.crm.folio, d.retool.folio]),
+    [[p.folio, retool.folio]],
+  )
+  // Nada se borró: siguen los dos.
+  assert.ok(await prisma.pedido.findUnique({ where: { id: retool.id } }))
+  assert.ok(await prisma.pedido.findUnique({ where: { id: r.cuerpo.pedidoId } }))
 })
