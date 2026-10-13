@@ -55,6 +55,10 @@ export function decidirActivos(
     if (c.codigo) porCodigo.set(`${c.sucursalId}|${c.codigo}`, c);
   }
 
+  const codigosDelFeed = new Set(feed.flatMap((f) => (f.codigo ? [`${f.sucursalId}|${f.codigo}`] : [])));
+  // El código de esta ficha ¿lo sigue mandando Parranda? Si no, está caducado.
+  const codigoVigente = (c: ClienteBase) => !!c.codigo && codigosDelFeed.has(`${c.sucursalId}|${c.codigo}`);
+
   const vistos = new Set<string>();
   const filasPorSucursal = new Map<string, number>();
   const conflictos: Array<{ quiere: ClienteBase; dueno: ClienteBase; codigo: string }> = [];
@@ -65,12 +69,21 @@ export function decidirActivos(
     const porNom = porNombre.get(`${f.sucursalId}|${norm(f.nombre)}`);
     const dueno = f.codigo ? porCodigo.get(`${f.sucursalId}|${f.codigo}`) : undefined;
 
-    if (porNom) {
+    // El nombre solo reclama una ficha que lleve OTRO código si ese código ya caducó: Parranda
+    // tiene clientes distintos con el mismo nombre (dos «Los Hermanos», 0289 y 0290), y la
+    // segunda fila no puede quedarse con la ficha de la primera dejando sin reclamar al dueño
+    // de su código. En cambio, si el código de la ficha ya no viene, la ficha viva es ésta.
+    const nombreVale = porNom && (!dueno || dueno.id === porNom.id || !codigoVigente(porNom));
+
+    if (porNom && nombreVale) {
       vistos.add(porNom.id);
       // Parranda dice que ESTE nombre lleva ese código, y lo tiene otra ficha: es la vieja.
       if (dueno && dueno.id !== porNom.id && f.codigo) conflictos.push({ quiere: porNom, dueno, codigo: f.codigo });
     } else if (dueno) {
       vistos.add(dueno.id);
+    } else if (porNom) {
+      // Mismo nombre y OTRO código que nadie tiene: Parranda lo recodificó. No se desactiva.
+      vistos.add(porNom.id);
     }
   }
 
@@ -105,7 +118,7 @@ export function decidirActivos(
   for (const c of existentes) if (!c.activo && vistos.has(c.id)) reactivar.push(c.id);
 
   const codigosMovidos = conflictos
-    .filter((x) => quitarDe.has(x.dueno.id) && !x.quiere.codigo)
+    .filter((x) => quitarDe.has(x.dueno.id) && !codigoVigente(x.quiere))
     .map((x) => ({ de: x.dueno.id, para: x.quiere.id, codigo: x.codigo }));
 
   return { desactivar, reactivar, codigosMovidos, avisos };

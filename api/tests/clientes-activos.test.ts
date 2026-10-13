@@ -79,3 +79,39 @@ test('no vuelve a desactivar al que ya está inactivo', () => {
 
   assert.deepEqual(d.desactivar, []);
 });
+
+test('dos clientes de Parranda con el mismo nombre y distinto código: cada fila reclama al dueño de su código', () => {
+  const r = relleno(60);
+  // «Los Hermanos» existe dos veces en Parranda (0289 y 0290). Una ficha lleva el nombre y el
+  // 0289; el 0290 lo tiene otra ficha con otro nombre, que estaba inactiva.
+  const nombre = cli('los-hermanos', 'LOS HERMANOS', 'LT0289');
+  const otra = cli('andy', 'ANDY NAVARRO GONZALEZ', 'LT0290', false);
+  const d = decidirActivos(
+    [...r.map((x) => x.c), nombre, otra],
+    [...r.map((x) => x.f), fila('Los Hermanos', 'LT0289'), fila('Los Hermanos', 'LT0290')],
+    norm,
+  );
+
+  assert.deepEqual(d.desactivar, []);
+  assert.deepEqual(d.reactivar, ['andy']);
+  assert.deepEqual(d.codigosMovidos, []);
+});
+
+test('la ficha viva con un código caducado recibe el que Parranda le pone hoy (caso J8 Raúl Creach)', () => {
+  const r = relleno(60);
+  // Parranda manda «J8 Raúl Creach» con el 2127, que tiene una ficha vieja sin uso. La ficha
+  // viva lleva el 2195, que ya no viene: es el código caducado, no otro cliente.
+  const vieja = cli('vieja', 'RAUL CREACH', 'SC2127');
+  const viva = cli('viva', 'J8 RAUL CREACH', 'SC2195');
+  const d = decidirActivos([...r.map((x) => x.c), vieja, viva], [...r.map((x) => x.f), fila('J8 Raúl Creach', 'SC2127')], (s) => norm(s).normalize('NFD').replace(/[̀-ͯ]/g, ''));
+
+  assert.deepEqual(d.desactivar, ['vieja']);
+  assert.deepEqual(d.codigosMovidos, [{ de: 'vieja', para: 'viva', codigo: 'SC2127' }]);
+});
+
+test('mismo nombre y un código que nadie tiene: Parranda lo recodificó, no se desactiva', () => {
+  const r = relleno(60);
+  const d = decidirActivos([...r.map((x) => x.c), cli('a', 'PEPE', 'C-VIEJO')], [...r.map((x) => x.f), fila('Pepe', 'C-NUEVO')], norm);
+
+  assert.deepEqual(d.desactivar, []);
+});
