@@ -20,6 +20,8 @@
  */
 import { Prisma } from '@prisma/client';
 import { nombreComparable, codigoComparable } from './nombreVendedor';
+import { avisarAlReparto } from './avisoAlReparto';
+import { emitEvent } from './events';
 
 /**
  * Prisma, tarde: `prismaClient` abre la conexión al cargarse, y las pruebas de la validación
@@ -417,4 +419,22 @@ export async function posiblesDuplicados(desde: Date, hasta: Date): Promise<Posi
   }
 
   return salida;
+}
+
+/**
+ * Lo que la ingesta de Retool dispara al terminar una tanda (`processBulkImport` en
+ * `routes/orders.ts`), para UN pedido del CRM recién creado. Sin esto se quedaba parado.
+ *
+ * Las mismas funciones y los mismos datos que `avisarDeLaTanda`: aviso al reparto con
+ * motivo `importacion` y accion `bulk`, y luego el evento de clientes. El filtro de
+ * `esParaElReparto` lo hace `avisarAlReparto` al no pasarle `esDelReparto` (lo lee de la
+ * base), igual que la tanda lo hace antes de llamarlo. El evento `pedido` ya lo emite la ruta.
+ */
+export function dispararComoLaIngesta(
+  p: { id: string; sucursalId: string | null },
+  avisar: typeof avisarAlReparto = avisarAlReparto,
+  emitir: typeof emitEvent = emitEvent,
+): void {
+  avisar({ id: p.id, sucursalId: p.sucursalId, motivo: 'importacion', accion: 'bulk' });
+  emitir('cliente', { sucursalId: p.sucursalId, accion: 'bulk' });
 }
