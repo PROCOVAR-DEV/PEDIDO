@@ -4,7 +4,7 @@
 // plano (secuencial, con pausa anti-ban), sin golpear la DB desde el request.
 import prisma from '../prismaClient';
 import { emitEvent } from './events';
-import { decidirActivos, type FilaDeParranda } from './clientesActivos';
+import { decidirActivos, esMejorFicha, type FilaDeParranda } from './clientesActivos';
 import { filasGanadoras } from './parrandaFilas';
 import { nombreComparable } from './nombreVendedor';
 import { esConsumoPropio } from './consumoPropio';
@@ -175,7 +175,11 @@ export async function processParrandaSync(
 
   for (const c of existentes) {
     porId.set(c.id, c);
-    if (c.sucursalId) porClave.set(`${c.sucursalId}|${norm(c.nombre)}`, c);
+    if (!c.sucursalId) continue;
+
+    const k = `${c.sucursalId}|${norm(c.nombre)}`;
+    const previa = porClave.get(k);
+    if (!previa || esMejorFicha(c, previa)) porClave.set(k, c);
   }
 
   // Quién tiene ya cada código, por sucursal.

@@ -35,6 +35,17 @@ export type DecisionActivos = {
   avisos: string[];
 };
 
+/**
+ * De dos fichas con el MISMO nombre normalizado (tildes, mayúsculas y signos aparte), cuál es la
+ * buena: la activa, y entre iguales la que tiene código. Sin esto un mapa por nombre se queda con
+ * la última que vio, y la ficha inactiva y sin código podía ganarle a la viva.
+ */
+export function esMejorFicha(a: { activo: boolean; codigo: string | null }, b: { activo: boolean; codigo: string | null }): boolean {
+  if (a.activo !== b.activo) return a.activo;
+
+  return !!a.codigo && !b.codigo;
+}
+
 export const MIN_FILAS_POR_SUCURSAL = 50;
 // Si una pasada quisiera desactivar a más de esta fracción de los clientes con código de una
 // sucursal, es casi seguro un fallo de Parranda (una página vacía, un filtro) y no cientos de
@@ -56,7 +67,9 @@ export function decidirActivos(
 
   for (const c of existentes) {
     if (!c.sucursalId) continue;
-    porNombre.set(`${c.sucursalId}|${norm(c.nombre)}`, c);
+    const k = `${c.sucursalId}|${norm(c.nombre)}`;
+    const previa = porNombre.get(k);
+    if (!previa || esMejorFicha(c, previa)) porNombre.set(k, c);
     if (c.codigo) porCodigo.set(`${c.sucursalId}|${c.codigo}`, c);
   }
 

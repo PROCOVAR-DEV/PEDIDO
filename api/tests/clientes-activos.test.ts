@@ -144,3 +144,15 @@ test('un inactivo con pedido reciente y sin sucesora vuelve a activo; con suceso
 
   assert.deepEqual(d.reactivar, ['uso']);
 });
+
+test('dos fichas con el mismo nombre normalizado: manda la activa con código, no la última que se vio', () => {
+  const r = relleno(60);
+  // Misma persona, una con tildes y una sin ellas; la inactiva sin código viene la última.
+  const buena = cli('buena', 'BIATRIZ ROMERO SUAREZ', 'CM01TCP0120');
+  const vieja = cli('vieja', 'BIATRIZ ROMERO SUÁREZ ', null, false);
+  const n = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+  const d = decidirActivos([...r.map((x) => x.c), buena, vieja], [...r.map((x) => x.f), fila('Biatriz Romero Suárez', 'CM01TCP0120')], n);
+
+  assert.deepEqual(d.desactivar, []);
+  assert.deepEqual(d.reactivar, []);
+});
