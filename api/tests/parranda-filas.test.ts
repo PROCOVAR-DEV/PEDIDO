@@ -44,3 +44,13 @@ test('una fila sin ficha no gana nada', () => {
 
   assert.deepEqual([...filasGanadoras(filas, porNombre)], []);
 });
+
+test('mismo código con dos nombres: gana la fila que ya tiene el nombre de la ficha, aunque no sea la última', () => {
+  type F = { nombre: string; codigo: string | null };
+  const ficha = { id: 'f', codigo: 'X', nombre: 'kiosko ana' };
+  const filas: F[] = [{ nombre: 'kiosko ana', codigo: 'X' }, { nombre: 'kiosko ana l2', codigo: 'X' }];
+  const g = filasGanadoras(filas, () => ficha, (fila, f) => fila.nombre === f.nombre);
+
+  assert.deepEqual([...g], [0]);
+  assert.deepEqual([...filasGanadoras([...filas].reverse(), () => ficha, (fila, f) => fila.nombre === f.nombre)], [1]);
+});

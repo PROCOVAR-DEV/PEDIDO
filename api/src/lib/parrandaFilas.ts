@@ -7,32 +7,34 @@
  * pasada, y «Qué cambió» enseñaba como cambios las mismas ~250 fichas de siempre.
  *
  * Aquí se decide UNA fila por ficha, y se escribe una vez:
- *   1. la que ya lleva el código de la ficha, si la hay (no hay nada que cambiar, y por eso
- *      es estable aunque Parranda cambie el orden de las filas entre pasadas);
+ *   1. la que ya lleva el código de la ficha, y de ésas la que además tiene SU nombre (no hay
+ *      nada que cambiar, y por eso es estable aunque Parranda cambie el orden de las filas);
  *   2. si no, la última, que es lo que quedaba guardado hasta ahora.
  *
  * Puro, para probarlo sin base de datos.
  */
-export function filasGanadoras<F extends { codigo: string | null }>(
+export function filasGanadoras<F extends { codigo: string | null }, C extends { id: string; codigo: string | null }>(
   filas: F[],
-  fichaDe: (fila: F) => { id: string; codigo: string | null } | undefined,
+  fichaDe: (fila: F) => C | undefined,
+  tieneSuNombre: (fila: F, ficha: C) => boolean = () => false,
 ): Set<number> {
-  const porFicha = new Map<string, { codigo: string | null; indices: number[] }>();
+  const porFicha = new Map<string, { ficha: C; indices: number[] }>();
 
   filas.forEach((fila, i) => {
     const ficha = fichaDe(fila);
     if (!ficha) return;
 
-    const grupo = porFicha.get(ficha.id) ?? { codigo: ficha.codigo, indices: [] };
+    const grupo = porFicha.get(ficha.id) ?? { ficha, indices: [] };
     grupo.indices.push(i);
     porFicha.set(ficha.id, grupo);
   });
 
   const ganadoras = new Set<number>();
 
-  for (const { codigo, indices } of porFicha.values()) {
-    const conSuCodigo = codigo ? indices.filter((i) => filas[i].codigo === codigo) : [];
-    ganadoras.add((conSuCodigo.length ? conSuCodigo : indices).at(-1)!);
+  for (const { ficha, indices } of porFicha.values()) {
+    const conSuCodigo = ficha.codigo ? indices.filter((i) => filas[i].codigo === ficha.codigo) : [];
+    const conSuNombre = conSuCodigo.filter((i) => tieneSuNombre(filas[i], ficha));
+    ganadoras.add((conSuNombre.length ? conSuNombre : conSuCodigo.length ? conSuCodigo : indices).at(-1)!);
   }
 
   return ganadoras;

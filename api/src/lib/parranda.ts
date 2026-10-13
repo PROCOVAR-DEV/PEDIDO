@@ -6,6 +6,8 @@ import prisma from '../prismaClient';
 import { emitEvent } from './events';
 import { decidirActivos, type FilaDeParranda } from './clientesActivos';
 import { filasGanadoras } from './parrandaFilas';
+import { nombreComparable } from './nombreVendedor';
+import { comparteNombre } from './nombreParecido';
 
 const PARRANDA_URL = process.env.PARRANDA_API_URL || 'https://ccsa.retool.com/url/procovar';
 const PARRANDA_KEY = process.env.PARRANDA_API_KEY || ''; // SECRETO: solo por env (nunca en repo)
@@ -161,7 +163,7 @@ export async function processParrandaSync(
   // nada. Ahora solo se escribe lo que de verdad cambio.
   const existentes = await prisma.cliente.findMany({
     select: {
-      id: true, nombre: true, sucursalId: true,
+      id: true, nombre: true, sucursalId: true, activo: true,
       codigo: true, direccion: true, municipio: true,
       latitud: true, longitud: true, geolocalizacion: true,
     },
@@ -247,12 +249,16 @@ export async function processParrandaSync(
 
     return { c, code, sucursalId, nombre, codigo: c.codigo ? String(c.codigo).trim() : null };
   });
-  const aplica = filasGanadoras(filas, (f) => {
-    if (!f.sucursalId || !f.nombre) return undefined;
-    const duenoId = f.codigo ? porCodigo.get(`${f.sucursalId}|${f.codigo}`) : undefined;
+  const aplica = filasGanadoras(
+    filas,
+    (f) => {
+      if (!f.sucursalId || !f.nombre) return undefined;
+      const duenoId = f.codigo ? porCodigo.get(`${f.sucursalId}|${f.codigo}`) : undefined;
 
-    return porClave.get(`${f.sucursalId}|${norm(f.nombre)}`) ?? (duenoId ? porId.get(duenoId) : undefined);
-  });
+      return porClave.get(`${f.sucursalId}|${norm(f.nombre)}`) ?? (duenoId ? porId.get(duenoId) : undefined);
+    },
+    (f, ficha) => norm(f.nombre) === norm(ficha.nombre),
+  );
 
   // 3) Se escribe UNA fila por ficha.
   for (const [i, { c, code, sucursalId, nombre }] of filas.entries()) {
@@ -286,6 +292,21 @@ export async function processParrandaSync(
       // Otra fila de Parranda cae en esta misma ficha y es la que se aplica: ésta no se escribe.
       if (actual && !aplica.has(i)) { r.repetidas++; continue; }
 
+      // La ficha se encontró por el CÓDIGO y no por el nombre: Parranda la llama de otra manera.
+      // Se le pone el nombre de Parranda, que es el que traen los archivos de pedidos; si no, el
+      // siguiente pedido de ese cliente no la encuentra por nombre. Sólo si ese nombre está libre
+      // en la sucursal, y nunca a una ficha inactiva.
+      const nuevoNombre = nombreComparable(nombre);
+      const renombrar =
+        !!actual &&
+        actual.activo &&
+        nuevoNombre !== actual.nombre &&
+        // El `-DUP-n` es el código con que Parranda marca a un duplicado: no identifica a nadie.
+        !/-DUP-/i.test(geoData.codigo ?? '') &&
+        comparteNombre(actual.nombre, nombre) &&
+        !porClave.has(key) &&
+        !porClave.has(`${sucursalId}|${norm(nuevoNombre)}`);
+
       if (actual) {
         // Solo se escribe si algo CAMBIO de verdad. Las coordenadas se comparan
         // con margen: son decimales y una diferencia en el ultimo digito no es
@@ -303,6 +324,7 @@ export async function processParrandaSync(
           });
         };
 
+        if (renombrar) anota('nombre', actual.nombre, nuevoNombre);
         if ((geoData.codigo ?? null) !== (actual.codigo ?? null)) anota('código', actual.codigo, geoData.codigo);
         if ((geoData.direccion ?? null) !== (actual.direccion ?? null)) anota('dirección', actual.direccion, geoData.direccion);
         if ((geoData.municipio ?? null) !== (actual.municipio ?? null)) anota('municipio', actual.municipio, geoData.municipio);
@@ -355,7 +377,8 @@ export async function processParrandaSync(
           if (r.cambios.length < 200) {
             r.cambios.push({ cliente: nombre, sucursal: code ?? null, campos });
           }
-          await prisma.cliente.update({ where: { id: actual.id }, data: geoData });
+          const datos = renombrar ? { ...geoData, nombre: nuevoNombre } : geoData;
+          await prisma.cliente.update({ where: { id: actual.id }, data: datos });
           r.actualizados++;
 
           // Y la foto se actualiza con lo que se acaba de escribir.
@@ -370,8 +393,9 @@ export async function processParrandaSync(
           // orden cambia entre pasadas el valor guardado va y viene, y en la
           // siguiente "cambia" otra vez. Eso es lo que hacía que el número subiera
           // solo —5703, 5913, 6127, 6602— sin que nadie tocara nada.
-          const foto = { ...actual, ...geoData };
-          porClave.set(`${sucursalId}|${norm(actual.nombre)}`, foto);
+          const foto = { ...actual, ...datos };
+          porClave.delete(`${sucursalId}|${norm(actual.nombre)}`);
+          porClave.set(`${sucursalId}|${norm(foto.nombre)}`, foto);
           porId.set(actual.id, foto);
           // El código recién escrito pasa a estar ocupado por este cliente: si más
           // abajo llega otro con el mismo, se ve el choque igual que si viniera de
