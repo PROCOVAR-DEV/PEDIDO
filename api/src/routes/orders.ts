@@ -25,7 +25,7 @@ import { parsearFechaConsulta } from '../lib/fechaConsulta';
 import { emitEvent } from '../lib/events';
 import { claveDePedido, clavesDeBorrados, folioBaseDe, reservarFoliosBorrados } from '../lib/pedidoBorrado';
 import { fichaViva } from '../lib/clienteVivo';
-import { unicaFichaParecida } from '../lib/nombreParecido';
+import { esElMismoCliente, unicaFichaParecida } from '../lib/nombreParecido';
 import { redisEnabled, publishJSON, getSubscriber, CH_IMPORT_DONE, CH_IMPORT_FAILED } from '../lib/redis';
 import { importQueue } from '../lib/queues';
 import { anotarEnCurso, anotarHecha, borrarEnCurso, leerEnCurso, leerHechas } from '../lib/importEnCurso';
@@ -2467,12 +2467,15 @@ async function processOrderRecord(
         where: { nombre: nombreCliente, sucursalId },
       });
 
-      // Nombre nuevo pero código que ya es de otra ficha: es el mismo cliente de Parranda con el
-      // nombre escrito de otra manera. El pedido va a esa ficha, no a un duplicado sin código.
-      const delCodigo =
+      // Nombre nuevo pero código que ya es de otra ficha: si el nombre es equivalente es el mismo
+      // cliente de Parranda escrito de otra manera, y el pedido va a esa ficha, no a un duplicado
+      // sin código. Si NO se parece, el código es de los que Parranda reparte a varios clientes
+      // (los «OTR», p. ej.): se crea la ficha como siempre, sin código, y el sync decide después.
+      const delCodigoCrudo =
         !ganador && incomingCode
           ? await prisma.cliente.findFirst({ where: { sucursalId, codigo: incomingCode } })
           : null;
+      const delCodigo = delCodigoCrudo && esElMismoCliente(nombreCliente, delCodigoCrudo.nombre) ? delCodigoCrudo : null;
 
       if (ganador) {
         client = await actualizarCliente(ganador);

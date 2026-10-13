@@ -8,6 +8,7 @@ import { decidirActivos, type FilaDeParranda } from './clientesActivos';
 import { filasGanadoras } from './parrandaFilas';
 import { nombreComparable } from './nombreVendedor';
 import { esConsumoPropio } from './consumoPropio';
+import { esElMismoCliente } from './nombreParecido';
 
 const PARRANDA_URL = process.env.PARRANDA_API_URL || 'https://ccsa.retool.com/url/procovar';
 const PARRANDA_KEY = process.env.PARRANDA_API_KEY || ''; // SECRETO: solo por env (nunca en repo)
@@ -238,6 +239,18 @@ export async function processParrandaSync(
     await new Promise((res) => setTimeout(res, PAUSA_MS)); // pausa anti-ban
   }
 
+  // La ficha que lleva este código. Los códigos «OTR» («otros») los reparte Parranda a VARIOS
+  // clientes —en los archivos de pedidos, 8 % de ellos salen con dos o más clientes distintos—, así
+  // que para esos sólo vale si el nombre se parece: si no, se le pondría a un cliente la dirección
+  // o el nombre de otro.
+  const fichaDelCodigo = (sucursalId: string | null, codigo: string | null, nombreFila: string) => {
+    if (!sucursalId || !codigo) return undefined;
+    const id = porCodigo.get(`${sucursalId}|${codigo}`);
+    const ficha = id ? porId.get(id) : undefined;
+
+    return ficha && (!/^[A-Z]{2}\d{2}OTR/i.test(codigo) || esElMismoCliente(ficha.nombre, nombreFila)) ? ficha : undefined;
+  };
+
   // 2) A qué ficha cae cada fila, y cuál se APLICA cuando varias caen en la misma. Parranda manda
   // nombres y códigos repetidos con datos distintos; escribir cada fila según llega dejaba la
   // ficha oscilando (la primera la cambiaba, la segunda la devolvía) y en cada pasada salían como
@@ -253,9 +266,7 @@ export async function processParrandaSync(
     filas,
     (f) => {
       if (!f.sucursalId || !f.nombre) return undefined;
-      const duenoId = f.codigo ? porCodigo.get(`${f.sucursalId}|${f.codigo}`) : undefined;
-
-      return porClave.get(`${f.sucursalId}|${norm(f.nombre)}`) ?? (duenoId ? porId.get(duenoId) : undefined);
+      return porClave.get(`${f.sucursalId}|${norm(f.nombre)}`) ?? fichaDelCodigo(f.sucursalId, f.codigo, f.nombre);
     },
     (f, ficha) => norm(f.nombre) === norm(ficha.nombre),
   );
@@ -286,8 +297,7 @@ export async function processParrandaSync(
       // Sin ficha por NOMBRE pero con una que YA lleva este código: es el mismo cliente con el
       // nombre escrito distinto («Mi8 Tatiana Hurtado» / «TATIANA HURTADO»). El código es exacto,
       // no se adivina nada. Sin esto esas fichas no recibían nunca su dirección ni su geo.
-      const idDelCodigo = geoData.codigo ? porCodigo.get(`${sucursalId}|${geoData.codigo}`) : undefined;
-      const actual = porClave.get(key) ?? (idDelCodigo ? porId.get(idDelCodigo) : undefined);
+      const actual = porClave.get(key) ?? fichaDelCodigo(sucursalId, geoData.codigo, nombre);
 
       // Otra fila de Parranda cae en esta misma ficha y es la que se aplica: ésta no se escribe.
       if (actual && !aplica.has(i)) { r.repetidas++; continue; }
