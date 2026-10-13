@@ -404,8 +404,12 @@ export async function processParrandaSync(
   // fallara a mitad, la excepción sale antes y nadie se desactiva por una pasada cortada.
   // Se marcan inactivos y NO se borran: los pedidos viejos siguen colgando de ellos.
   try {
-    const frescos = await prisma.cliente.findMany({ select: { id: true, nombre: true, sucursalId: true, codigo: true, activo: true } });
-    const d = decidirActivos(frescos, delFeed, norm);
+    const frescos = await prisma.cliente.findMany({ select: { id: true, nombre: true, sucursalId: true, codigo: true, activo: true, sucesorId: true } });
+    // Fichas con un pedido de los últimos 30 días: están en uso, y no se desactivan por no venir.
+    const hace30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const conPedido = await prisma.pedido.groupBy({ by: ['clienteId'], where: { createdAt: { gte: hace30 } } });
+    const conPedidoReciente = new Set(conPedido.flatMap((x) => (x.clienteId ? [x.clienteId] : [])));
+    const d = decidirActivos(frescos, delFeed, norm, conPedidoReciente);
 
     r.avisos.push(...d.avisos.slice(0, Math.max(0, 30 - r.avisos.length)));
 

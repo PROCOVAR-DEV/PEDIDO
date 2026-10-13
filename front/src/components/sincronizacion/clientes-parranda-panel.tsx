@@ -57,6 +57,8 @@ interface SyncRun {
     actualizados: number;
     /** Encontrados en Parranda pero sin nada que cambiar. */
     sinCambios?: number;
+    /** Filas de Parranda que caen en una ficha a la que ya se aplicó otra fila (nombres o códigos repetidos). */
+    repetidas?: number;
     conGeo: number;
     sinGeo: number;
     errores: number;
@@ -309,6 +311,7 @@ export const ClientesParrandaPanel = () => {
                         {s.resultado.sinCambios != null
                           ? ` · ${s.resultado.sinCambios} ya estaban al día`
                           : ""}
+                        {s.resultado.repetidas ? ` · ${s.resultado.repetidas} repetidas en Parranda` : ""}
                         {" · "}
                         {s.resultado.conGeo} geo · {s.resultado.errores} err
                         {s.resultado.desactivados ? ` · ${s.resultado.desactivados} pasaron a inactivos` : ""}

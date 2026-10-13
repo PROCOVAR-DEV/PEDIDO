@@ -115,3 +115,32 @@ test('mismo nombre y un código que nadie tiene: Parranda lo recodificó, no se 
 
   assert.deepEqual(d.desactivar, []);
 });
+
+test('una ficha con un pedido reciente no se desactiva por no venir en Parranda', () => {
+  const r = relleno(60);
+  const enUso = cli('uso', 'LO SIGUEN PIDIENDO', 'SC0001');
+  const sinUso = cli('sinuso', 'NADIE LO PIDE', 'SC0002');
+  const d = decidirActivos([...r.map((x) => x.c), enUso, sinUso], r.map((x) => x.f), norm, new Set(['uso']));
+
+  assert.deepEqual(d.desactivar, ['sinuso']);
+});
+
+test('la ficha vieja de un renombre se desactiva aunque tenga pedidos recientes (el pedido va a la viva)', () => {
+  const r = relleno(60);
+  // Caso Dagmaris: la vieja lleva el código, la viva lleva el nombre nuevo y no tiene código.
+  const vieja = cli('vieja', 'DAGMARIS ZAMBRANA MATOS', 'SC06TCP0169');
+  const viva = cli('viva', 'DAGMARIS ZAMBRANA MATOS V3', null);
+  const d = decidirActivos([...r.map((x) => x.c), vieja, viva], [...r.map((x) => x.f), fila('Dagmaris Zambrana Matos V3', 'SC06TCP0169')], norm, new Set(['vieja']));
+
+  assert.deepEqual(d.desactivar, ['vieja']);
+  assert.deepEqual(d.codigosMovidos, [{ de: 'vieja', para: 'viva', codigo: 'SC06TCP0169' }]);
+});
+
+test('un inactivo con pedido reciente y sin sucesora vuelve a activo; con sucesora no', () => {
+  const r = relleno(60);
+  const enUso = cli('uso', 'LO PIDEN', 'SC0001', false);
+  const conSucesora = { ...cli('vieja', 'FICHA VIEJA', 'SC0002', false), sucesorId: 'viva' };
+  const d = decidirActivos([...r.map((x) => x.c), enUso, conSucesora], r.map((x) => x.f), norm, new Set(['uso', 'vieja']));
+
+  assert.deepEqual(d.reactivar, ['uso']);
+});

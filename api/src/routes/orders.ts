@@ -2650,6 +2650,13 @@ async function processOrderRecord(
 
     tocados?.add(creado.id);
     creados?.add(creado.id);
+
+    // Entró un pedido NUEVO: el cliente está en uso, aunque Parranda ya no lo mande. Se reactiva
+    // (y el sync de la tarde no lo vuelve a apagar mientras tenga pedidos de los últimos 30 días).
+    // Sólo con un pedido nuevo: un archivo que reenvía pedidos viejos no resucita a nadie.
+    if (!client.activo) {
+      await prisma.cliente.update({ where: { id: client.id }, data: { activo: true, desactivadoAt: null } });
+    }
   }
 }
 

@@ -24,7 +24,7 @@
  *
  * Puro, sin base de datos, para poder probarlo.
  */
-export type ClienteBase = { id: string; nombre: string; sucursalId: string | null; codigo: string | null; activo: boolean };
+export type ClienteBase = { id: string; nombre: string; sucursalId: string | null; codigo: string | null; activo: boolean; sucesorId?: string | null };
 export type FilaDeParranda = { sucursalId: string; nombre: string; codigo: string | null };
 
 export type DecisionActivos = {
@@ -45,6 +45,11 @@ export function decidirActivos(
   existentes: ClienteBase[],
   feed: FilaDeParranda[],
   norm: (s: string) => string,
+  // Fichas que recibieron un pedido hace poco. Una ficha en uso no se desactiva sólo porque
+  // Parranda no la mande: entra un pedido, la ingesta la reactiva, y si el sync de la tarde la
+  // volviera a apagar estaría encendiéndose y apagándose cada día. Sólo cede si OTRA ficha viva
+  // ya lleva su código (la vieja de un renombre: ésa sí se desactiva, tenga pedidos o no).
+  conPedidoReciente: ReadonlySet<string> = new Set(),
 ): DecisionActivos {
   const porNombre = new Map<string, ClienteBase>();
   const porCodigo = new Map<string, ClienteBase>();
@@ -91,6 +96,7 @@ export function decidirActivos(
   const desactivar: string[] = [];
   const reactivar: string[] = [];
   const quitarDe = new Set<string>();
+  const superados = new Set(conflictos.map((x) => x.dueno.id));
 
   for (const [sucursalId, n] of filasPorSucursal) {
     if (n < MIN_FILAS_POR_SUCURSAL) {
@@ -111,11 +117,18 @@ export function decidirActivos(
 
     for (const c of fuera) {
       quitarDe.add(c.id);
-      if (c.activo) desactivar.push(c.id);
+      if (c.activo && !(conPedidoReciente.has(c.id) && !superados.has(c.id))) desactivar.push(c.id);
     }
   }
 
-  for (const c of existentes) if (!c.activo && vistos.has(c.id)) reactivar.push(c.id);
+  // Vuelve el que Parranda volvió a mandar, y el que está en uso (pedido reciente) aunque no la mande.
+  // Pero NO una ficha vieja con sucesora —su pedido va a la viva— ni la que cede su código a otra:
+  // reactivarlas traería de vuelta los duplicados.
+  for (const c of existentes) {
+    if (c.activo) continue;
+    const enUso = conPedidoReciente.has(c.id) && !c.sucesorId && !superados.has(c.id);
+    if (vistos.has(c.id) || enUso) reactivar.push(c.id);
+  }
 
   const codigosMovidos = conflictos
     .filter((x) => quitarDe.has(x.dueno.id) && !codigoVigente(x.quiere))
