@@ -97,6 +97,9 @@ export const VendedoresList = () => {
   const puedeGestionar = !["operador", "gestor"].includes(
     String(user?.role || "").toLowerCase(),
   );
+  // El Operador SÍ puede dar de alta (en su sucursal), y sólo eso.
+  const puedeCrear =
+    puedeGestionar || String(user?.role || "").toLowerCase() === "operador";
   const activeSucursalId = session?.isGlobalAdmin
     ? getSucursalActiva()
     : session?.sucursalId;
@@ -500,7 +503,7 @@ export const VendedoresList = () => {
           {/* Alta manual: solo para el que no usa tablet. Los de tablet entran
               solos con su archivo, así que el botón está aquí y no como acción
               principal de la pantalla — crear a mano es la excepción. */}
-          {puedeGestionar && (
+          {puedeCrear && (
             <Button
               color="primary"
               size="sm"

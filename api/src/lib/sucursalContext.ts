@@ -23,6 +23,8 @@ interface RequesterContext {
   isGlobalAdmin: boolean;
   /** Puede dar de alta/baja vendedores y enlazarlos a un gestor. */
   puedeGestionarVendedores: boolean;
+  /** Puede dar de ALTA un vendedor (en su sucursal). Los de gestionar, y además el Operador. */
+  puedeCrearVendedores: boolean;
   isSuperAdmin: boolean;
   /** Puede entrar a Usuarios (Super Admin o Administrador). */
   canManageUsers: boolean;
@@ -162,6 +164,7 @@ export function getRequesterContext(req: Request): RequesterContext {
       canManageUsers: false,
       isGestor: false,
       puedeGestionarVendedores: false,
+      puedeCrearVendedores: false,
       puedeImportarYReportar: true,
       // La API key es de LECTURA (el middleware solo la acepta en GET/HEAD).
       puedeCompletarPedidos: false,
@@ -191,6 +194,9 @@ export function getRequesterContext(req: Request): RequesterContext {
   // por un mal clic mientras trabaja.
   const puedeGestionarVendedores =
     isSuperAdmin || role === 'ADMINISTRADOR' || role === 'SUPERVISOR';
+  // El Operador puede DAR DE ALTA, y nada más: baja, reactivar, enlazar gestor y corregir el nombre
+  // siguen siendo de quien gestiona. Crea sólo en SU sucursal (la ruta lo comprueba).
+  const puedeCrearVendedores = puedeGestionarVendedores || role === 'OPERADOR';
 
   // El Operador queda fuera: entra a leer y a copiar codigos para facturar.
   // Ocultarle los botones en la pantalla no es proteccion — esta comprobacion,
@@ -230,6 +236,7 @@ export function getRequesterContext(req: Request): RequesterContext {
     canManageUsers,
     isGestor,
     puedeGestionarVendedores,
+    puedeCrearVendedores,
     puedeImportarYReportar,
     puedeCompletarPedidos,
     puedeBorrarPedidos,

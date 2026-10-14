@@ -269,7 +269,7 @@ router.post('/', async (req, res) => {
     const requester = getRequesterContext(req);
 
     // Ocultar el botón en la pantalla no es protección: la comprobación va aquí.
-    if (!requester.puedeGestionarVendedores) {
+    if (!requester.puedeCrearVendedores) {
       return res.status(403).json({ error: 'No tienes permiso para crear vendedores.' });
     }
 
