@@ -48,7 +48,8 @@
  * El pedido es de PEDIDO, y a Entrega no se le puede preguntar nada: es una APK que
  * trabaja sin conexión. El cotejo tiene que ocurrir del lado que siempre está en línea.
  */
-import { camposParaCompletar, conservaSuFactura } from './autocompletado';
+import { camposParaCompletar, conservaSuFactura, POR_LA_FACTURA } from './autocompletado';
+import { anotarHistorial } from './historialPedido';
 import prisma from '../prismaClient';
 import { avisarAlReparto, avisarQueYaNoVa, queLeCambia } from './avisoAlReparto';
 import { databases, ventasDeSucursal, ventasPorPrefijoDeFolio, type LineaVentaVentra } from './ventra';
@@ -669,6 +670,11 @@ async function cotejarUnPedido(
 
   if (Object.keys(datos).length > 0 || corregido) {
     if (Object.keys(datos).length > 0) await prisma.pedido.update({ where: { id: p.id }, data: datos });
+    // Lo que la factura le hizo al pedido, a su historial.
+    await anotarHistorial({ origen: 'sistema', por: POR_LA_FACTURA }, [
+      ...(completar ? [{ pedidoId: p.id, tipo: 'completado' as const, nota: r.numero ? `Factura ${r.numero}` : 'Con factura' }] : []),
+      ...(corregido ? [{ pedidoId: p.id, tipo: 'editado' as const, campo: 'Líneas del pedido', nota: `Reescritas con la factura ${r.numero}` }] : []),
+    ]);
     // Que se vea sin que nadie recargue.
     emitEvent('pedido', { id: p.id, sucursalId: p.sucursalId, accion: 'update' });
 

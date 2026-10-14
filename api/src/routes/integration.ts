@@ -1,4 +1,5 @@
-import { camposParaCompletar } from '../lib/autocompletado';
+import { camposParaCompletar, POR_LA_FACTURA } from '../lib/autocompletado';
+import { anotarHistorial } from '../lib/historialPedido';
 import { Router } from 'express';
 import prisma from '../prismaClient';
 import { avisarAlReparto, DONDE_ES_PARA_EL_REPARTO } from '../lib/avisoAlReparto';
@@ -1113,6 +1114,9 @@ router.post('/orders/invoicing', async (req, res) => {
         guardado.push('factura');
         if (completar) {
           guardado.push('completado');
+          await anotarHistorial({ origen: 'sistema', por: POR_LA_FACTURA }, [
+            { pedidoId: pedido.id, tipo: 'completado', nota: numero ? `Factura ${numero}` : 'Con factura' },
+          ]);
         }
       }
 

@@ -50,6 +50,7 @@ import {
   guardarMoneda,
   type Moneda,
 } from "@/lib/moneda";
+import { HistorialPedido } from "./historial-pedido";
 import { PapeleraBorrados } from "./papelera-borrados";
 import { VendedoresCopiar } from "./vendedores-copiar";
 
@@ -2576,6 +2577,14 @@ export const OrdersList = () => {
                       el mismo día acababa con la misma factura copiada en todos.
                     */}
                   </div>
+
+                  {/* Qué le pasó al pedido: cuándo se editó, desde dónde y quién. */}
+                  {selectedOrder && (
+                    <HistorialPedido
+                      pedidoId={selectedOrder.id}
+                      version={`${selectedOrder.estado}|${selectedOrder.completedAt ?? ""}`}
+                    />
+                  )}
                 </div>
               </EnvaseCuerpo>
               <EnvasePie className="flex-col items-stretch gap-3">

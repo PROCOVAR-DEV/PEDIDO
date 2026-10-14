@@ -48,10 +48,12 @@ async function main() {
 
   const concurrency = Number(process.env.IMPORT_CONCURRENCY || 2);
   queue.process(concurrency, async (job) => {
-    const { records, uploaderSucursalId, restrictToGestorId } = job.data as {
+    const { records, uploaderSucursalId, restrictToGestorId, archivo, por } = job.data as {
       records: unknown[];
       uploaderSucursalId: string | null;
       restrictToGestorId?: string | null;
+      archivo?: string | null;
+      por?: string | null;
     };
     /**
      * El progreso se guarda EN EL JOB, que es lo que puede leer la API.
@@ -71,6 +73,8 @@ async function main() {
         // creando pedidos o fallando todos.
         void job.progress({ hechos, total, ...parcial, at: Date.now() }).catch(() => {});
       },
+      null,
+      { origen: 'pantalla', archivo: archivo ?? null, por: por ?? null },
     );
     if (!outcome.ok) {
       // Colisión de vendedor: publica el fallo (el SSE lo reenvía al front) y falla el job.

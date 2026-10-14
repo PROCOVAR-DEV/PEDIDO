@@ -30,6 +30,8 @@ import { redisEnabled, publishJSON, getSubscriber, CH_IMPORT_DONE, CH_IMPORT_FAI
 import { importQueue } from '../lib/queues';
 import { anotarEnCurso, anotarHecha, borrarEnCurso, leerEnCurso, leerHechas } from '../lib/importEnCurso';
 import { anotarImportacion } from '../lib/registroIngesta';
+import { anotarHistorial, type ContextoHistorial } from '../lib/historialPedido';
+import { cambioDeLinea, cambiosDeCabecera, type Cambio } from '../lib/cambiosDePedido';
 import { mintSseTicket, consumeSseTicket } from '../lib/sseTickets';
 import { ingestaAuth } from '../middleware/ingestaAuth';
 
@@ -783,6 +785,8 @@ router.patch('/:id/completar', async (req, res) => {
       include: { items: true, cliente: true, vendedor: true, sucursal: { select: { codigo: true } } },
     });
 
+    await anotarHistorial({ origen: 'pantalla', por: quien.username ?? null }, [{ pedidoId: order.id, tipo: 'completado' }]);
+
     emitEvent('pedido', {
       sucursalId: order.sucursalId,
       id: order.id,
@@ -796,6 +800,49 @@ router.patch('/:id/completar', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update order status' });
+  }
+});
+
+/**
+ * El historial de UN pedido: cuándo y cómo se creó, se editó, se completó o se reabrió.
+ *
+ * Mismo alcance que el pedido (`alcancePedido`) y, para el Gestor, sólo los de SUS vendedores,
+ * como en la lista: si no se puede ver el pedido, tampoco lo que le pasó. En orden, del
+ * principio al final, que es como se cuenta.
+ */
+router.get('/:id/historial', async (req, res) => {
+  try {
+    const quien = getRequesterContext(req);
+
+    if (!quien.sesionValida) {
+      return res.status(401).json({ error: SESION_CADUCADA });
+    }
+
+    const { where, error: sucursalError } = alcancePedido(req);
+    if (sucursalError || !where) {
+      return res.status(400).json({ error: sucursalError });
+    }
+
+    const pedido = await prisma.pedido.findFirst({
+      where: { ...where, ...(quien.isGestor && quien.userId ? { vendedor: { gestorId: quien.userId } } : {}) },
+      select: { id: true },
+    });
+
+    if (!pedido) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const historial = await prisma.pedidoHistorial.findMany({
+      where: { pedidoId: pedido.id },
+      orderBy: { at: 'asc' },
+      take: 300,
+      select: { id: true, at: true, tipo: true, por: true, origen: true, archivo: true, fuente: true, campo: true, antes: true, despues: true, nota: true },
+    });
+
+    res.json({ historial });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'No se pudo leer el historial del pedido' });
   }
 });
 
@@ -1218,6 +1265,12 @@ router.patch('/:id/estado', async (req, res) => {
       include: { items: true, cliente: true, vendedor: true, sucursal: { select: { codigo: true } } },
     });
 
+    await anotarHistorial({ origen: 'pantalla', por: quienCambia.username ?? null }, [
+      estado === 'completada'
+        ? { pedidoId: order.id, tipo: 'completado' }
+        : { pedidoId: order.id, tipo: 'reabierto', nota: vencido ? 'Se le quitó la fecha comprometida vencida' : null },
+    ]);
+
     // Un pedido que se REABRE y sigue pidiendo domicilio sin costo hay que volver a
     // cotizarlo, y en el acto. Si no, se queda esperando a que alguien importe un CSV o
     // pulse "Reencolar" —o sea, a que alguien se acuerde—, que es justo lo que no puede
@@ -1353,6 +1406,7 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
         uploaderSucursalId: uploaderSucursalId ?? null,
         restrictToGestorId,
         archivo, lote, deLotes,
+        por: gestorCtx.username ?? null,
         // Cuántas filas trae, aparte de las filas: para contar lo que espera sin tener
         // que sacar de Redis el CSV entero de cada trabajo.
         totalFilas: records.length,
@@ -1392,6 +1446,7 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
           void anotarEnCurso({ ...base, filas: total, hechos, ...parcial });
         },
         sucursalDeLaCarpeta,
+        { origen: origenDelArchivo, archivo, fuente, por: gestorCtx.username ?? null },
       );
 
       if (!outcome.ok) {
@@ -2089,6 +2144,8 @@ export async function processBulkImport(
   // pone el camino de n8n: la de quien sube desde la pantalla NO vale, que es lo que metió a
   // `glenda.melisa` en GTO con sus 1447 pedidos de STG.
   sucursalDeLaCarpeta: string | null = null,
+  // Quién y por dónde entra el archivo, para el historial de cada pedido que toque.
+  contexto: ContextoHistorial = { origen: 'sistema' },
 ): Promise<BulkImportOutcome> {
   /**
    * Antes de repartir los folios, se mira QUÉ FOLIO TIENE YA CADA CLIENTE.
@@ -2243,7 +2300,7 @@ export async function processBulkImport(
     }
 
     try {
-      await processOrderRecord(record, results, resolved.seller.id, resolved.sucursalId, borrados, pedidosTocados, idsCreados, idsActualizados);
+      await processOrderRecord(record, results, resolved.seller.id, resolved.sucursalId, borrados, pedidosTocados, idsCreados, idsActualizados, contexto);
       if (resolved.sucursalId === null) results.sinAsignar++;
       else sucursalesTocadas.add(resolved.sucursalId);
     } catch (error) {
@@ -2359,6 +2416,7 @@ async function processOrderRecord(
   /** Ids de los pedidos creados y actualizados, para contar PEDIDOS y no renglones. */
   creados: Set<string> | null = null,
   actualizados: Set<string> | null = null,
+  contexto: ContextoHistorial = { origen: 'sistema' },
 ) {
   const seller = { id: sellerId };
 
@@ -2574,6 +2632,19 @@ async function processOrderRecord(
   // ni fechas, ni cobro. Se cuenta aparte para que se vea por qué lo que subió no entró.
   if (existingOrder?.estado === 'completada') {
     results.congelados = (results.congelados ?? 0) + 1;
+
+    // Si lo que traía el archivo era distinto de lo guardado, queda dicho que se intentó y no se
+    // dejó: es la respuesta a «lo editaron después de completarlo».
+    const intento: Cambio[] = [
+      ...[cambioDeLinea(existingOrder.items, record.item)].flatMap((c) => (c ? [c] : [])),
+      ...cambiosDeCabecera(existingOrder, record.order),
+    ];
+
+    await anotarHistorial(
+      contexto,
+      intento.map((c) => ({ pedidoId: existingOrder.id, tipo: 'ignorado' as const, ...c, nota: 'Pedido completado: no se tocó' })),
+    );
+
     return;
   }
 
@@ -2618,6 +2689,13 @@ async function processOrderRecord(
   }
 
   if (existingOrder) {
+    // Lo que esta fila cambia de verdad, para el historial. Una línea de más en un pedido que
+    // esta misma tanda acaba de crear no es una edición: es el pedido terminando de entrar.
+    const cambios: Cambio[] = [
+      ...(creados?.has(existingOrder.id) ? [] : [cambioDeLinea(existingOrder.items, record.item)].flatMap((c) => (c ? [c] : []))),
+      ...cambiosDeCabecera(existingOrder, record.order),
+    ];
+
     // Update the order's fecha_comprometida if the new record has a different one
     // Use the latest (most future) fecha_comprometida
     const updateData: any = {};
@@ -2697,6 +2775,8 @@ async function processOrderRecord(
       });
     }
 
+    await anotarHistorial(contexto, cambios.map((c) => ({ pedidoId: existingOrder.id, tipo: 'editado' as const, ...c })));
+
     /*
      * Sólo si CAMBIÓ algo de verdad.
      *
@@ -2743,6 +2823,7 @@ async function processOrderRecord(
 
     tocados?.add(creado.id);
     creados?.add(creado.id);
+    await anotarHistorial(contexto, [{ pedidoId: creado.id, tipo: 'creado' }]);
 
     // Entró un pedido NUEVO: el cliente está en uso, aunque Parranda ya no lo mande. Se reactiva
     // (y el sync de la tarde no lo vuelve a apagar mientras tenga pedidos de los últimos 30 días).

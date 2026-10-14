@@ -301,6 +301,7 @@ model Pedido {
   completadoPorId    String?
   completadoPor      String?
   items              PedidoItem[]
+  historial          PedidoHistorial[]
   copias             CopiaPortapapeles[]
   domicilioGrupos    PedidoDomicilioGrupo[]
 
@@ -720,4 +721,41 @@ model ImportacionArchivo {
   @@index([sucursalId, createdAt])
   @@index([estado, createdAt])
   @@map("ImportFile")
+}
+
+/// Lo que le ha pasado a un pedido, en orden: cuándo, quién y por qué vía.
+///
+/// Nació el 14/10/2026 de una duda que la pantalla no podía resolver. Una administradora
+/// de La Habana dijo que un pedido se había editado después de completado; el pedido
+/// guardaba CUÁNDO se completó y CUÁNDO se tocó por última vez, pero no qué se tocó ni
+/// desde dónde, y hubo que reconstruirlo a mano con las horas del archivo y de la factura.
+/// Con esto la respuesta está en el propio pedido.
+///
+/// `tipo`: `creado` · `editado` (un campo o una línea, con `antes` y `despues`) ·
+/// `ignorado` (un archivo intentó tocar un pedido ya completado y no se dejó) ·
+/// `completado` · `reabierto`.
+/// `origen`: `n8n` (la ingesta de la carpeta del Drive) · `pantalla` · `sistema`.
+///
+/// Es información, no el trabajo: apuntar nunca tumba lo que se está haciendo. Ver
+/// `lib/historialPedido.ts`. Se borra con el pedido.
+model PedidoHistorial {
+  id       String   @id @default(cuid())
+  pedidoId String   @map("orderId")
+  pedido   Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  at       DateTime @default(now())
+  tipo     String
+  /// El usuario, si fue una persona. Nulo si lo hizo un archivo de n8n o el sistema.
+  por      String?
+  origen   String
+  /// El archivo CSV y el flujo de n8n (o «pantalla»), cuando vino por la ingesta.
+  archivo  String?
+  fuente   String?
+  /// Qué cambió: el nombre del campo o el del producto de la línea.
+  campo    String?
+  antes    String?
+  despues  String?
+  nota     String?
+
+  @@index([pedidoId, at])
+  @@map("OrderHistory")
 }
