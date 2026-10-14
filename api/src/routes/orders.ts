@@ -1035,9 +1035,11 @@ class VendedorInactivoError extends Error {
   }
 }
 
-// La sucursal la decide el GESTOR del vendedor. Quién sube el CSV ya no influye:
-// un vendedor sin gestor entra "Sin asignar", sin sucursal.
-async function resolveSeller(name: string, code: string): Promise<SellerResolution> {
+// La sucursal la decide el GESTOR del vendedor. Quién sube el CSV ya no influye. Un vendedor
+// NUEVO nace con la sucursal de la CARPETA del Drive de la que viene el archivo (`?sucursal=` de
+// n8n), si la hay: sin ella entra «Sin asignar», a la vista de los supervisores de TODAS las
+// sucursales, y así fue como una supervisora de Holguín dio de baja a una vendedora de Las Tunas.
+async function resolveSeller(name: string, code: string, sucursalDeLaCarpeta: string | null = null): Promise<SellerResolution> {
   // Nombre y codigo se aplanan con `lib/nombreVendedor`, que es EL MISMO modulo
   // que usa el alta manual desde la aplicacion. Antes estaba aqui suelto, y una
   // copia es justo lo que no puede haber: si los dos caminos aplanaran distinto,
@@ -1118,16 +1120,17 @@ async function resolveSeller(name: string, code: string): Promise<SellerResoluti
     return { seller: existing, sucursalId };
   }
 
-  // Vendedor nuevo: SIN sucursal y SIN gestor. Sus pedidos entran pero quedan
-  // ocultos hasta que se le enlace un gestor desde la vista de Vendedores; ese
-  // enlace los reparte a la sucursal correcta.
+  // Vendedor nuevo, SIN gestor. Con la sucursal de la carpeta —si el archivo la trae— sus pedidos
+  // se ven desde el primer día en esa sucursal y sólo ella ve al vendedor. Sin ella: «Sin
+  // asignar», con los pedidos ocultos hasta que se le enlace un gestor desde la vista de
+  // Vendedores; ese enlace los reparte a la sucursal correcta.
   const seller = await prisma.vendedor.create({
     // Se guarda el nombre PLANO (`nombre`), no el crudo del archivo. Si se
     // guardara crudo, el siguiente archivo que trajera la tilde escrita de la
     // otra forma no lo encontraria y lo daria por otra persona.
-    data: { nombre, codigo: codigo || null, sucursalId: null, gestorId: null },
+    data: { nombre, codigo: codigo || null, sucursalId: sucursalDeLaCarpeta, gestorId: null },
   });
-  return { seller, sucursalId: null };
+  return { seller, sucursalId: sucursalDeLaCarpeta };
 }
 
 // Bulk create orders from CSV records
@@ -1375,6 +1378,12 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
     };
 
     try {
+      // Sólo n8n manda `?sucursal=`, y su carpeta del Drive ES la de esa sucursal.
+      const codigoDeLaCarpeta = origenDelArchivo === 'n8n' && typeof req.query.sucursal === 'string' ? req.query.sucursal.trim().toUpperCase() : '';
+      const sucursalDeLaCarpeta = codigoDeLaCarpeta
+        ? (await prisma.sucursal.findFirst({ where: { codigo: codigoDeLaCarpeta }, select: { id: true } }))?.id ?? null
+        : null;
+
       const outcome = await processBulkImport(
         records,
         uploaderSucursalId ?? null,
@@ -1382,6 +1391,7 @@ router.post('/bulk', ingestaAuth, async (req, res) => {
         (hechos, total, parcial) => {
           void anotarEnCurso({ ...base, filas: total, hechos, ...parcial });
         },
+        sucursalDeLaCarpeta,
       );
 
       if (!outcome.ok) {
@@ -2075,6 +2085,10 @@ export async function processBulkImport(
    * y se comporta exactamente igual que antes.
    */
   avisar?: (hechos: number, total: number, parcial: { creados: number; actualizados: number; fallidos: number }) => void,
+  // La sucursal de la carpeta del Drive de la que viene el archivo (`?sucursal=` de n8n). Sólo la
+  // pone el camino de n8n: la de quien sube desde la pantalla NO vale, que es lo que metió a
+  // `glenda.melisa` en GTO con sus 1447 pedidos de STG.
+  sucursalDeLaCarpeta: string | null = null,
 ): Promise<BulkImportOutcome> {
   /**
    * Antes de repartir los folios, se mira QUÉ FOLIO TIENE YA CADA CLIENTE.
@@ -2115,7 +2129,7 @@ export async function processBulkImport(
     if (sellersByCode.has(key) || vendedoresRechazados.has(key)) continue;
 
     try {
-      sellersByCode.set(key, await resolveSeller(r.seller.name, r.seller.code));
+      sellersByCode.set(key, await resolveSeller(r.seller.name, r.seller.code, sucursalDeLaCarpeta));
     } catch (error) {
       if (error instanceof VendedorColisionError || error instanceof VendedorInactivoError) {
         vendedoresRechazados.set(key, error.message);
