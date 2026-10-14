@@ -19,6 +19,7 @@ import crypto from 'crypto';
 import prisma from '../prismaClient';
 import { aplicarCostoDomicilio } from './domicilio';
 import { emitEvent } from './events';
+import { configDelCrm } from './avisoAlCrm';
 
 /**
  * `domicilio` es la APK de Entrega; `reparto` es delivery-logistica, la que carga los
@@ -35,6 +36,9 @@ const _cache = new Map<Destino, { at: number; cfg: ConfigWebhook }>();
 const VIGENCIA_MS = 15000;
 
 export async function getConfig(destino: Destino): Promise<ConfigWebhook> {
+  // El CRM no está en WebhookConfig: va por entorno (lib/avisoAlCrm.ts).
+  const crm = configDelCrm(destino);
+  if (crm) return crm;
   const c = _cache.get(destino);
   if (c && Date.now() - c.at < VIGENCIA_MS) return c.cfg;
 
