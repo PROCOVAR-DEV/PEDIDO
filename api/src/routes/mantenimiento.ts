@@ -527,7 +527,12 @@ router.post('/restore', upload.single('file') as any, async (req, res) => {
         if (!vendedorId && p.folio) vendedorId = prefixMap.get(String(p.folio).substring(0, 3)) ?? null;
         const base = { sucursalId: sucId, vendedorId, clienteId, direccion: p.direccion ?? null, encargado: p.encargado ?? null, telefono: p.telefono ?? null, fecha: fecha(p.fecha) ?? new Date(), fecha_comprometida: fecha(p.fecha_comprometida), estado: p.estado ?? null, pedido_cobrado: p.pedido_cobrado ?? null, requiere_domicilio: p.requiere_domicilio ?? null, costoDomicilio: p.costoDomicilio ?? null };
         const existente = await prisma.pedido.findFirst({ where: { sucursalId: sucId, folio: p.folio, vendedorId } });
-        if (existente) { await prisma.pedido.update({ where: { id: existente.id }, data: base }); pedMap.set(p.id, { id: existente.id, nuevo: false }); }
+        if (existente) {
+          // Un pedido COMPLETADO no se toca por esta vía: ni una restauración ni una importación puede
+          // reescribirlo (con una copia vieja volvería a «en proceso»). Igual que la ingesta de /bulk.
+          if (existente.estado !== 'completada') await prisma.pedido.update({ where: { id: existente.id }, data: base });
+          pedMap.set(p.id, { id: existente.id, nuevo: false });
+        }
         else { const creado = await prisma.pedido.create({ data: { folio: p.folio, ...base, createdAt: fecha(p.createdAt) ?? undefined } }); pedMap.set(p.id, { id: creado.id, nuevo: true }); pedOk++; }
       } catch { /* se salta */ }
     }
@@ -730,7 +735,12 @@ router.post('/import-sqlite', upload.single('file') as any, async (req, res) => 
           costoDomicilio: null,
         };
         const existente = await prisma.pedido.findFirst({ where: { sucursalId, folio: p.folio, vendedorId } });
-        if (existente) { await prisma.pedido.update({ where: { id: existente.id }, data: base }); pedMap.set(p.id, { id: existente.id, nuevo: false }); }
+        if (existente) {
+          // Un pedido COMPLETADO no se toca por esta vía: ni una restauración ni una importación puede
+          // reescribirlo (con una copia vieja volvería a «en proceso»). Igual que la ingesta de /bulk.
+          if (existente.estado !== 'completada') await prisma.pedido.update({ where: { id: existente.id }, data: base });
+          pedMap.set(p.id, { id: existente.id, nuevo: false });
+        }
         else { const creado = await prisma.pedido.create({ data: { folio: p.folio, ...base, createdAt: fecha(p.createdAt) ?? undefined } }); pedMap.set(p.id, { id: creado.id, nuevo: true }); pedOk++; }
       } catch { /* se salta */ }
     }
