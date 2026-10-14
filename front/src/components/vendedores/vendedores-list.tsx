@@ -88,6 +88,11 @@ interface VendedorStats {
   availableYears: number[];
 }
 
+// «Sin asignar»: sin sucursal, o llegó por un archivo y nadie lo ha enlazado a su usuario. Es la
+// misma regla que `esSinAsignar` del servidor.
+const esSinAsignar = (v: Vendedor) =>
+  v.activo && (!v.sucursal?.id || (!v.gestorId && !v.creadoPor));
+
 export const VendedoresList = () => {
   const { session, user } = useAuthStore();
   // El OPERADOR entra a esta vista solo para copiar el codigo del vendedor y
@@ -170,7 +175,7 @@ export const VendedoresList = () => {
           vendedores: lista,
           // El contador de "sin asignar" es la razon de ser de esta vista: tiene
           // que cuadrar con lo que se esta viendo, no con lo que trajo el servidor.
-          sinAsignar: lista.filter((v) => v.activo && !v.sucursal?.id).length,
+          sinAsignar: lista.filter(esSinAsignar).length,
         };
       },
     },
@@ -456,8 +461,7 @@ export const VendedoresList = () => {
     const search = searchValue.trim().toLowerCase();
 
     const filtered = vendedores.filter((v) => {
-      // «Sin asignar» es sin SUCURSAL: sin usuario se puede estar, sin sucursal no.
-      if (filtroEstado === "sin_gestor" && (v.sucursal?.id || !v.activo)) return false;
+      if (filtroEstado === "sin_gestor" && !esSinAsignar(v)) return false;
       if (filtroEstado === "asignados" && (!v.sucursal?.id || !v.activo)) return false;
       if (filtroEstado === "baja" && v.activo) return false;
       // "activos" (por defecto) enseña a todos los que están de alta, tengan
@@ -520,8 +524,10 @@ export const VendedoresList = () => {
             <div className="p-3 text-sm border rounded-lg bg-warning-50 border-warning-200 text-warning-700 flex flex-wrap items-center gap-3">
               <span>
                 Hay <b>{sinAsignar}</b> vendedor{sinAsignar > 1 ? "es" : ""} sin
-                gestor. Sus pedidos están <b>ocultos</b> hasta que le asignes
-                uno; al asignarlo, todos sus pedidos ya subidos se asignan solos.
+                asignar. Los que llegaron por un archivo ya están en su
+                sucursal y sus pedidos se ven: enlázalos a su usuario o dalos de
+                baja. Los que no tienen sucursal tienen los pedidos{" "}
+                <b>ocultos</b> hasta que les asignes una.
               </span>
               {/* El aviso ahora LLEVA a ellos. Antes decía cuántos había y no
                   daba forma de encontrarlos: con 79 vendedores de 10 en 10,

@@ -12,7 +12,7 @@ import {
   resolveSucursalFilter,
   resolveSucursalScope,
 } from '../lib/sucursalContext';
-import { ROLES_ENLAZABLES, backfillSucursalDeVendedor } from '../lib/gestores';
+import { ROLES_ENLAZABLES, backfillSucursalDeVendedor, esSinAsignar } from '../lib/gestores';
 
 const router = express.Router();
 
@@ -169,9 +169,9 @@ router.get('/gestores', async (req, res) => {
     res.json({
       gestores,
       vendedores,
-      // "Sin asignar" es SIN SUCURSAL: sin usuario se puede estar, sin sucursal no —
-      // ahí es donde los pedidos quedan ocultos. Solo cuenta a los activos.
-      sinAsignar: vendedores.filter((v) => v.activo && !v.sucursalId).length,
+      // «Sin asignar»: sin sucursal (ahí los pedidos quedan ocultos) o llegado por archivo y aún
+      // sin usuario enlazado. Sin usuario se puede estar si lo dio de alta una persona. Solo activos.
+      sinAsignar: vendedores.filter(esSinAsignar).length,
       // Para elegir la sucursal de un vendedor sin usuario. Al scopeado le llega la suya.
       sucursales: await prisma.sucursal.findMany({
         where: sucursalId ? { id: sucursalId } : {},

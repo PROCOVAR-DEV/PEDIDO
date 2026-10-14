@@ -5,6 +5,23 @@ import type { Prisma } from '@prisma/client';
 // gestor). El Supervisor también sube pedidos, así que también tiene que poder llevarlos.
 export const ROLES_ENLAZABLES = ['Gestor', 'Supervisor'];
 
+/**
+ * «Sin asignar»: sin sucursal, o llegó por un archivo y nadie lo ha enlazado a su usuario.
+ *
+ * Un vendedor nuevo nace con la sucursal de la carpeta (`resolveSeller`), así que ya no basta con
+ * mirar la sucursal: tiene que seguir saliendo como pendiente, para su supervisora, hasta que se
+ * le enlace el usuario de la tablet. Lo que lo distingue de uno dado de alta a mano sin usuario es
+ * `creadoPor`: el alta manual lo guarda y la ingesta no.
+ */
+export function esSinAsignar(v: {
+  activo: boolean;
+  sucursalId: string | null;
+  gestorId: string | null;
+  creadoPor: string | null;
+}): boolean {
+  return v.activo && (!v.sucursalId || (!v.gestorId && !v.creadoPor));
+}
+
 export type ResultadoBackfill = {
   pedidos: number;
   clientes: number;

@@ -13,6 +13,8 @@ export interface Vendedor {
   /** Quien lo dio de baja y cuando. Vacios si esta de alta. */
   bajaPor?: string | null;
   bajaEn?: string | null;
+  /** Quién lo dio de alta a mano. Vacío si lo creó la ingesta al llegar un archivo suyo. */
+  creadoPor?: string | null;
   gestor?: { id: string; username: string } | null;
   sucursal?: { id: string; nombre: string; codigo: string | null } | null;
   _count?: { pedidos: number };
