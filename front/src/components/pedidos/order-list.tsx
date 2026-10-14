@@ -2214,9 +2214,14 @@ export const OrdersList = () => {
                         <p className="mb-1 text-xs text-default-500">
                           Subido al sistema
                         </p>
-                        <p className="text-sm font-medium">
-                          {comoSeLeeElInstante(selectedOrder?.createdAt) ?? "—"}
-                        </p>
+                        {/* El historial va aquí, junto a la fecha de entrada, y se abre aparte:
+                            en el detalle crecería la tarjeta, que ya es larga. */}
+                        <div className="flex flex-wrap items-center gap-x-2">
+                          <p className="text-sm font-medium">
+                            {comoSeLeeElInstante(selectedOrder?.createdAt) ?? "—"}
+                          </p>
+                          {selectedOrder && <HistorialPedido pedidoId={selectedOrder.id} />}
+                        </div>
                       </div>
                       {/* COMPLETADO: quién y cuándo, juntos.
                           Estuvo un rato como un chip entre los estados y ahí no pega:
@@ -2577,14 +2582,6 @@ export const OrdersList = () => {
                       el mismo día acababa con la misma factura copiada en todos.
                     */}
                   </div>
-
-                  {/* Qué le pasó al pedido: cuándo se editó, desde dónde y quién. */}
-                  {selectedOrder && (
-                    <HistorialPedido
-                      pedidoId={selectedOrder.id}
-                      version={`${selectedOrder.estado}|${selectedOrder.completedAt ?? ""}`}
-                    />
-                  )}
                 </div>
               </EnvaseCuerpo>
               <EnvasePie className="flex-col items-stretch gap-3">

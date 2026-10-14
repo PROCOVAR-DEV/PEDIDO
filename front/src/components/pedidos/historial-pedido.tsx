@@ -1,4 +1,4 @@
-import { Chip, Spinner } from "@heroui/react";
+import { Button, Chip, Popover, PopoverContent, PopoverTrigger, Spinner } from "@heroui/react";
 import { useEffect, useState } from "react";
 
 import { getApiBaseUrl } from "@/config";
@@ -11,7 +11,9 @@ import { getApiBaseUrl } from "@/config";
  * ve si lo cambió un archivo (con su nombre y su carpeta), una persona o el sistema — y los
  * intentos de cambio que se rechazaron por estar ya completado.
  *
- * Se pide al abrir el pedido, no con la lista: son miles de pedidos y se mira uno.
+ * Va en un botón junto a «Subido al sistema» y se abre en un desplegable APARTE, no dentro del
+ * detalle: el detalle ya es largo y un historial con varias ediciones lo estiraría más. Se pide
+ * al abrirlo, no con la lista ni con el detalle: son miles de pedidos y se mira uno.
  */
 type Fila = {
   id: string;
@@ -91,15 +93,19 @@ function agrupar(filas: Fila[]): Fila[][] {
   return grupos;
 }
 
-export const HistorialPedido = ({ pedidoId, version }: { pedidoId: string; version: string }) => {
+export const HistorialPedido = ({ pedidoId }: { pedidoId: string }) => {
+  const [abierto, setAbierto] = useState(false);
   const [filas, setFilas] = useState<Fila[] | null>(null);
   const [falla, setFalla] = useState(false);
 
-  // `version` cambia cuando el pedido cambia (se completa, se reabre): se vuelve a pedir.
+  // Cada vez que se abre se vuelve a pedir: el pedido pudo cambiar desde la última vez.
   useEffect(() => {
+    if (!abierto) return;
+
     const control = new AbortController();
 
     setFalla(false);
+    setFilas(null);
     fetch(`${getApiBaseUrl()}/orders/${pedidoId}/historial`, { signal: control.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((j: { historial: Fila[] }) => setFilas(j.historial))
@@ -108,57 +114,66 @@ export const HistorialPedido = ({ pedidoId, version }: { pedidoId: string; versi
       });
 
     return () => control.abort();
-  }, [pedidoId, version]);
+  }, [abierto, pedidoId]);
 
   return (
-    <div>
-      <h4 className="mb-2 text-sm font-semibold text-default-700">Historial</h4>
-      {falla ? (
-        <p className="text-xs text-default-500">No se pudo cargar el historial.</p>
-      ) : filas === null ? (
-        <Spinner size="sm" />
-      ) : filas.length === 0 ? (
-        <p className="text-xs text-default-500">
-          Sin movimientos guardados. El historial se empezó a llevar el 14/10/2026: lo anterior no se
-          registró.
-        </p>
-      ) : (
-        <ol className="flex flex-col gap-2">
-          {agrupar(filas).map((grupo) => {
-            const f = grupo[0];
-            const t = TITULO[f.tipo];
+    <Popover isOpen={abierto} placement="bottom-end" onOpenChange={setAbierto}>
+      <PopoverTrigger>
+        <Button className="h-6 min-w-0 px-2 text-xs" color="primary" size="sm" variant="light">
+          Ver historial
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent>
+        <div className="max-h-[60vh] w-[min(92vw,28rem)] overflow-y-auto p-2">
+          <h4 className="mb-2 text-sm font-semibold text-default-700">Historial del pedido</h4>
+          {falla ? (
+            <p className="text-xs text-default-500">No se pudo cargar el historial.</p>
+          ) : filas === null ? (
+            <Spinner size="sm" />
+          ) : filas.length === 0 ? (
+            <p className="text-xs text-default-500">
+              Sin movimientos guardados. El historial se empezó a llevar el 14/10/2026: lo anterior no se
+              registró.
+            </p>
+          ) : (
+            <ol className="flex flex-col gap-2">
+              {agrupar(filas).map((grupo) => {
+                const f = grupo[0];
+                const t = TITULO[f.tipo];
 
-            return (
-              <li key={f.id} className="rounded-lg bg-default-50 p-3">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <Chip color={t.color} size="sm" variant="flat">
-                    {t.texto}
-                  </Chip>
-                  <span className="text-xs tabular-nums text-default-600">{cuando(f.at)}</span>
-                  <span className="min-w-0 break-words text-xs text-default-500">{porDonde(f)}</span>
-                </div>
-                {f.tipo === "ignorado" && (
-                  <p className="mt-1 text-xs text-danger-600">
-                    El pedido ya estaba completado: el archivo intentó esto y no se aplicó.
-                  </p>
-                )}
-                {(f.tipo === "editado" || f.tipo === "ignorado") && (
-                  <ul className="mt-1 flex flex-col gap-0.5">
-                    {grupo.map((g) => (
-                      <li key={g.id} className="break-words text-sm">
-                        {cambio(g)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {f.tipo !== "editado" && f.tipo !== "ignorado" && f.nota && (
-                  <p className="mt-1 text-xs text-default-500">{f.nota}</p>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </div>
+                return (
+                  <li key={f.id} className="rounded-lg bg-default-50 p-3">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <Chip color={t.color} size="sm" variant="flat">
+                        {t.texto}
+                      </Chip>
+                      <span className="text-xs tabular-nums text-default-600">{cuando(f.at)}</span>
+                    </div>
+                    <p className="mt-1 break-words text-xs text-default-500">{porDonde(f)}</p>
+                    {f.tipo === "ignorado" && (
+                      <p className="mt-1 text-xs text-danger-600">
+                        El pedido ya estaba completado: el archivo intentó esto y no se aplicó.
+                      </p>
+                    )}
+                    {(f.tipo === "editado" || f.tipo === "ignorado") && (
+                      <ul className="mt-1 flex flex-col gap-0.5">
+                        {grupo.map((g) => (
+                          <li key={g.id} className="break-words text-sm">
+                            {cambio(g)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {f.tipo !== "editado" && f.tipo !== "ignorado" && f.nota && (
+                      <p className="mt-1 text-xs text-default-500">{f.nota}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };
