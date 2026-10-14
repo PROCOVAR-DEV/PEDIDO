@@ -1,4 +1,5 @@
 import { publishJSON, CH_EVENTS } from './redis';
+import { avisarAlCrm } from './avisoAlCrm';
 
 // Entidades que emiten evento de cambio para el SSE en vivo (/events/stream).
 export type EntidadEvento =
@@ -74,5 +75,9 @@ export function emitEvent(tipo: EntidadEvento, opts: OpcionesEvento = {}): void 
     datos,
     ts: Date.now(),
   });
+
+  // Si es un pedido del CRM y le cambió la factura, la entrega o se borró, se le avisa.
+  // Apagado sin CRM_WEBHOOK_URL/SECRET; nunca lanza (lib/avisoAlCrm.ts).
+  avisarAlCrm(tipo, opts);
 
 }
