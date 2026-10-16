@@ -32,6 +32,10 @@ function aplanar(s: string): string {
   return (s || '')
     .normalize('NFD') // separa la letra de su tilde
     .replace(new RegExp('[\\u0300-\\u036f]', 'g'), '') // y tira la tilde
+    // Un salto de línea o un tabulador DENTRO del nombre separa palabras: se vuelve espacio. Tirarlo
+    // pegaba las palabras («MIRIAM AMPARO⏎SAAVEDRA» → «AMPAROSAAVEDRA») y el cliente ya no casaba con
+    // el de Parranda, que sí lo trae (56 nombres de Parranda tienen uno, 16/10/2026).
+    .replace(new RegExp('[\\t\\n\\v\\f\\r\\u0085\\u2028\\u2029]', 'g'), ' ')
     .replace(new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\ufeff]', 'g'), ''); // y lo invisible
 }
 

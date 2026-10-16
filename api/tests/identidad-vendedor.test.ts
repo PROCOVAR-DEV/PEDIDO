@@ -166,3 +166,11 @@ describe('los DOS caminos tienen que dar la misma identidad', () => {
     });
   }
 });
+
+test('un salto de línea o un tabulador dentro del nombre separa palabras, no las pega (Parranda trae 56)', () => {
+  assert.equal(nombreComparable('MIRIAM AMPARO\n\nSAAVEDRA PADRÓN'), 'MIRIAM AMPARO SAAVEDRA PADRON');
+  assert.equal(nombreComparable('Kiosko Mayrelis Laugart Barroso\r\n(web) L2'), 'KIOSKO MAYRELIS LAUGART BARROSO (WEB) L2');
+  assert.equal(nombreComparable('CAFE\tCENTRAL'), 'CAFE CENTRAL');
+  // y lo invisible sigue tirándose sin dejar hueco
+  assert.equal(nombreComparable('ANDY\u200b ALMANZA'), 'ANDY ALMANZA');
+});
