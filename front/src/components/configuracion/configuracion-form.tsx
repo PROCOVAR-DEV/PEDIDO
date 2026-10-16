@@ -466,7 +466,7 @@ export const ConfiguracionForm = () => {
               {
                 titulo: "Clientes de Parranda",
                 texto:
-                  "Cuántos clientes hay por sucursal, cuándo se sincronizó por última vez y cómo fue. Se sincroniza solo todos los días a las 6 de la tarde.",
+                  "Cuántos clientes hay por sucursal, cuándo se sincronizó por última vez y cómo fue. Se sincroniza solo cada hora, de 8 de la mañana a 6 de la tarde.",
                 href: "/panel/sincronizacion/clientes",
               },
               {

@@ -242,7 +242,7 @@ export const ClientesParrandaPanel = () => {
                     Estuvo meses prometiéndolo sin que nadie la disparara y no se
                     notó, porque no había forma de comprobarlo desde aquí. */}
                 {resumen?.proximaSync
-                  ? `Se sincroniza sola todos los días a las 6:00 pm. La próxima: ${new Date(resumen.proximaSync).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}. También podés correrlo a mano.`
+                  ? `Se sincroniza sola cada hora, de 8:00 am a 6:00 pm. La próxima: ${new Date(resumen.proximaSync).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}. También podés correrlo a mano.`
                   : "La sincronización automática no está programada ahora mismo. Podés correrla a mano."}
               </p>
             </div>

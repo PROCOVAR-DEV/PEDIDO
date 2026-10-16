@@ -299,7 +299,17 @@ function arrancarWebhooks() {
 }
 
 /**
- * El sync de clientes, todos los días a las 6 de la tarde.
+ * El sync de clientes, CADA HORA de 8 a 18 (hora de Cuba).
+ *
+ * Era una vez al día, a las 18:00. Un cliente que el vendedor crea sin conexión entra con el
+ * pedido SIN código —Parranda le pone un marcador y PEDIDO lo descarta— y su código real
+ * llegaba hasta esa tarde: todo lo que se facturaba en el día se copiaba a Ventra con el
+ * NOMBRE (`C-DIOMARA AYALA DIAZ`) en vez del código. Desde septiembre fueron ~3.660 facturas
+ * de clientes que hoy sí lo tienen (Julián, 16/10/2026). Cada hora el código llega a lo sumo
+ * una hora tarde, que es lo que tarda en que lo vea Parranda y lo traiga este sync.
+ *
+ * Cuesta 14 páginas de Parranda por pasada (con su pausa) y ~1 minuto: 11 pasadas al día.
+ * Se vuelve a una al día con `PARRANDA_SYNC_CRON='0 18 * * *'`, sin tocar código.
  *
  * La pantalla de Configuración lo prometía —"se sincroniza solo todos los días a las
  * 6:00 pm"— y no lo hacía NADIE: no había cron en la API, ni aquí, ni un flujo en n8n.
@@ -318,7 +328,7 @@ function arrancarWebhooks() {
  * programados y se sincronizaría dos veces al día sin que nadie entienda por qué.
  */
 async function programarSyncDiario(pq: NonNullable<ReturnType<typeof parrandaQueue>>) {
-  const cron = process.env.PARRANDA_SYNC_CRON || '0 18 * * *';
+  const cron = process.env.PARRANDA_SYNC_CRON || '0 8-18 * * *';
   const tz = process.env.PARRANDA_SYNC_TZ || 'America/Havana';
 
   try {
