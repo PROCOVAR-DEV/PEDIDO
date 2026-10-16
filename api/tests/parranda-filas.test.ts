@@ -54,3 +54,19 @@ test('mismo código con dos nombres: gana la fila que ya tiene el nombre de la f
   assert.deepEqual([...g], [0]);
   assert.deepEqual([...filasGanadoras([...filas].reverse(), () => ficha, (fila, f) => fila.nombre === f.nombre)], [1]);
 });
+
+test('una ficha sin código NO se queda con la fila sin código aunque sea la última (CAM JUAN PABLO PEREZ)', () => {
+  const filas: Fila[] = [{ nombre: 'nuevo', codigo: 'CM01OTR0211' }, { nombre: 'nuevo', codigo: null }];
+
+  assert.deepEqual([...filasGanadoras(filas, porNombre)], [0]);
+  // Y da igual el orden.
+  assert.deepEqual([...filasGanadoras([...filas].reverse(), porNombre)], [1]);
+});
+
+test('una ficha sin código prefiere un código real a un -DUP-n, y el -DUP-n a nada', () => {
+  const real: Fila[] = [{ nombre: 'nuevo', codigo: 'HO09TCP0675' }, { nombre: 'nuevo', codigo: 'HO09TCP0675-DUP-1' }];
+  const soloDup: Fila[] = [{ nombre: 'nuevo', codigo: null }, { nombre: 'nuevo', codigo: 'HO09TCP0675-DUP-1' }, { nombre: 'nuevo', codigo: null }];
+
+  assert.deepEqual([...filasGanadoras(real, porNombre)], [0]);
+  assert.deepEqual([...filasGanadoras(soloDup, porNombre)], [1]);
+});

@@ -34,7 +34,29 @@ export function filasGanadoras<F extends { codigo: string | null }, C extends { 
   for (const { ficha, indices } of porFicha.values()) {
     const conSuCodigo = ficha.codigo ? indices.filter((i) => filas[i].codigo === ficha.codigo) : [];
     const conSuNombre = conSuCodigo.filter((i) => tieneSuNombre(filas[i], ficha));
-    ganadoras.add((conSuNombre.length ? conSuNombre : conSuCodigo.length ? conSuCodigo : indices).at(-1)!);
+    /**
+     * Una ficha SIN código se queda con una fila que SÍ lo traiga.
+     *
+     * Antes ganaba la última fila, la trajera o no. Si Parranda repite un cliente —una fila con
+     * su código y otra sin él, o con un `-DUP-n`— y la sin código quedaba última, la ficha no
+     * recibía nunca su código y el texto copiado a Ventra salía con el nombre (16/10/2026:
+     * `CAM JUAN PABLO PEREZ`, `HOL CAFETERIA ESTHERLIS`). El `-DUP-n` marca un duplicado y no
+     * identifica a nadie: va el último.
+     */
+    const conCodigo = indices.filter((i) => !!filas[i].codigo);
+    const conCodigoReal = conCodigo.filter((i) => !/-DUP-/i.test(filas[i].codigo ?? ''));
+    ganadoras.add(
+      (conSuNombre.length
+        ? conSuNombre
+        : conSuCodigo.length
+          ? conSuCodigo
+          : conCodigoReal.length
+            ? conCodigoReal
+            : conCodigo.length
+              ? conCodigo
+              : indices
+      ).at(-1)!,
+    );
   }
 
   return ganadoras;
