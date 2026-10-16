@@ -26,7 +26,7 @@ export default function SincronizacionClientesPage() {
         // hay que volver a bajar hasta el bloque de sincronizadores para seguir.
         cta={{ href: "/panel/configuracion", label: "Volver a Configuración" }}
         icon="client"
-        paragraph="Los clientes que vienen de Parranda: cuántos hay por sucursal, cuándo se sincronizó por última vez y cómo fue. Se sincroniza solo cada hora, de 8 de la mañana a 6 de la tarde."
+        paragraph="Los clientes que vienen de Parranda: cuántos hay por sucursal, cuándo se sincronizó por última vez y cómo fue. Se sincroniza solo cada 3 horas, de 8 de la mañana a 8 de la noche."
         title="Sincronización · Clientes"
       />
       <ClientesParrandaPanel />
