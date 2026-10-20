@@ -21,6 +21,7 @@ export interface Cliente {
   /** La cruda del consolidado ("lat,lng" tal cual llegó), por si la parseada falla. */
   geolocalizacion?: string | null;
   /** Provincia: en Parranda es la provincia y aquí es la sucursal. Es el mismo dato. */
+  sucursalId?: string | null;
   sucursalNombre?: string | null;
   sucursalCodigo?: string | null;
   /** Distancia al almacén, medida por Entrega. Se guarda en el cliente, no en el pedido. */

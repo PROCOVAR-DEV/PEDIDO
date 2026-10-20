@@ -21,6 +21,7 @@ import { useEffect, useState, useCallback } from "react";
 import { ACCION_TARJETA, cards } from "../primitives";
 import Icons from "../icons/iconify";
 import { VendedorSelect } from "../vendedor-select";
+import { ReasignarCliente } from "./reasignar-cliente";
 
 import { cn, copyTextToClipboard } from "@/lib/utils";
 import { registrarCopia } from "@/lib/registrar-copia";
@@ -407,6 +408,10 @@ export const ClientesList = () => {
                       >
                         Ver Detalles
                       </Button>
+                      <ReasignarCliente
+                        cliente={cliente}
+                        onHecho={() => fetchClientes()}
+                      />
                     </div>
                   </div>
                 </CardBody>

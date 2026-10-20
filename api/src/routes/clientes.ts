@@ -8,6 +8,8 @@ import {
   soloLoSuyo,
 } from '../lib/sucursalContext';
 import { parrandaQueue } from '../lib/queues';
+import { anotarHistorial } from '../lib/historialPedido';
+import { planReasignacion } from '../lib/reasignarCliente';
 
 const router = express.Router();
 
@@ -545,6 +547,71 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error fetching clientes:', error);
     res.status(500).json({ error: 'Error al obtener clientes' });
+  }
+});
+
+// POST /clientes/:id/reasignar-vendedor { vendedorId, desdeVendedorId? }
+// Pasa los pedidos del cliente al vendedor nuevo (ver lib/reasignarCliente) y deja una fila
+// de historial por pedido. Solo Administrador (de SU sucursal) y los roles globales.
+router.post('/:id/reasignar-vendedor', async (req, res) => {
+  const ctx = getRequesterContext(req);
+  if (!ctx.canManageUsers) {
+    return res.status(403).json({ error: 'Solo un Administrador puede reasignar clientes.' });
+  }
+  const vendedorId = typeof req.body?.vendedorId === 'string' ? req.body.vendedorId.trim() : '';
+  const desde = typeof req.body?.desdeVendedorId === 'string' ? req.body.desdeVendedorId.trim() : '';
+  if (!vendedorId) return res.status(400).json({ error: 'Falta el vendedor nuevo.' });
+
+  try {
+    const cliente = await prisma.cliente.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, nombre: true, sucursalId: true },
+    });
+    // Un Administrador solo toca clientes de su sucursal; los globales, de cualquiera.
+    if (!cliente || (!ctx.isGlobalAdmin && cliente.sucursalId !== ctx.sucursalId)) {
+      return res.status(404).json({ error: 'Cliente no encontrado' });
+    }
+
+    const nuevo = await prisma.vendedor.findUnique({
+      where: { id: vendedorId },
+      select: { id: true, nombre: true, activo: true, sucursalId: true },
+    });
+    if (!nuevo || !nuevo.activo) return res.status(400).json({ error: 'El vendedor no existe o está de baja.' });
+    // Nunca a un vendedor de otra sucursal: los pedidos quedarían ocultos para su sucursal.
+    if (nuevo.sucursalId !== cliente.sucursalId) {
+      return res.status(400).json({ error: 'El vendedor es de otra sucursal que el cliente.' });
+    }
+
+    const pedidos = (
+      await prisma.pedido.findMany({
+        where: { clienteId: cliente.id },
+        select: { id: true, vendedorId: true, vendedor: { select: { nombre: true } } },
+      })
+    ).map((p) => ({ id: p.id, vendedorId: p.vendedorId, vendedorNombre: p.vendedor?.nombre ?? null }));
+
+    const plan = planReasignacion(pedidos, nuevo.id, desde || null);
+    if (plan.mover.length > 0) {
+      await prisma.pedido.updateMany({
+        where: { id: { in: plan.mover.map((p) => p.id) } },
+        data: { vendedorId: nuevo.id },
+      });
+      await anotarHistorial(
+        { origen: 'pantalla', por: ctx.username ?? null },
+        plan.mover.map((p) => ({
+          pedidoId: p.id,
+          tipo: 'editado' as const,
+          campo: 'vendedor',
+          antes: p.vendedorNombre,
+          despues: nuevo.nombre,
+          nota: 'Cliente reasignado a otro vendedor',
+        })),
+      );
+    }
+
+    return res.json({ movidos: plan.mover.length, yaSuyos: plan.yaSuyos, vendedor: nuevo.nombre });
+  } catch (error) {
+    console.error('Error reasignando cliente:', error);
+    return res.status(500).json({ error: 'Error al reasignar el cliente' });
   }
 });
 
