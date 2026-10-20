@@ -50,6 +50,7 @@
  */
 import { camposParaCompletar, conservaSuFactura, POR_LA_FACTURA } from './autocompletado';
 import { anotarHistorial } from './historialPedido';
+import { cajeroDeLasFacturas } from './cajeroVentra';
 import prisma from '../prismaClient';
 import { avisarAlReparto, avisarQueYaNoVa, queLeCambia } from './avisoAlReparto';
 import { databases, ventasDeSucursal, ventasPorPrefijoDeFolio, type LineaVentaVentra } from './ventra';
@@ -315,7 +316,7 @@ export async function cotejarUnaVez(
          */
         const puedeDescasar = !rapido && p.fecha >= desde;
         const cambios = await cotejarUnPedido(
-          p, suyas ? ventas.filter((v) => suyas.has(v.operNumber)) : [], catalogo, puedeDescasar,
+          p, suyas ? ventas.filter((v) => suyas.has(v.operNumber)) : [], catalogo, puedeDescasar, base.database,
         );
 
         if (cambios.estado === 'igual') r.igual++;
@@ -458,6 +459,8 @@ async function cotejarUnPedido(
   catalogo: CatalogoSucursal | null = null,
   /** Si esta pasada puede quitarle la factura a un pedido que ya la tenía. Ver quien llama. */
   puedeDescasar = true,
+  /** La base de Ventra de esta sucursal: hace falta para preguntar quién cobró. */
+  database = '',
 ): Promise<{ estado: string; corregido: boolean }> {
   const suyas = ventas.map<LineaFactura>((v) => ({
     operNumber: v.operNumber,
@@ -500,7 +503,10 @@ async function cotejarUnPedido(
 
   // Con factura, el pedido está completado: lo dice la factura, no hace falta que nadie
   // vaya a pulsarlo. La regla vive en un solo sitio porque la factura entra por dos.
-  const completar = camposParaCompletar(r.estado, p.estado);
+  // Quién cobró, SÓLO si va a completarse: es una consulta más a Ventra y no hace falta si el pedido
+  // ya estaba completado o no tiene factura.
+  const cajero = camposParaCompletar(r.estado, p.estado) && database ? await cajeroDeLasFacturas(database, ventas) : null;
+  const completar = camposParaCompletar(r.estado, p.estado, cajero);
 
   if (completar) Object.assign(datos, completar);
   // Igual que arriba: sólo si de verdad es otro número.
@@ -671,7 +677,7 @@ async function cotejarUnPedido(
   if (Object.keys(datos).length > 0 || corregido) {
     if (Object.keys(datos).length > 0) await prisma.pedido.update({ where: { id: p.id }, data: datos });
     // Lo que la factura le hizo al pedido, a su historial.
-    await anotarHistorial({ origen: 'sistema', por: POR_LA_FACTURA }, [
+    await anotarHistorial({ origen: 'sistema', por: String(completar?.completadoPor ?? POR_LA_FACTURA) }, [
       ...(completar ? [{ pedidoId: p.id, tipo: 'completado' as const, nota: r.numero ? `Factura ${r.numero}` : 'Con factura' }] : []),
       ...(corregido ? [{ pedidoId: p.id, tipo: 'editado' as const, campo: 'Líneas del pedido', nota: `Reescritas con la factura ${r.numero}` }] : []),
     ]);

@@ -164,6 +164,8 @@ export interface LineaVentaVentra {
   productoNombre: string;
   cantidad: number;
   precioUsd: number | null;
+  /** Descuento de la línea, en USD. Entra en el total de la factura: sin él no se puede casar con su pago. */
+  descuento: number;
   /**
    * La NOTA de la factura. Es donde va el folio del pedido.
    *
@@ -303,10 +305,58 @@ async function leerVentas(ruta: string, etiqueta: string, tope: number): Promise
       productoNombre: texto(f, 'productName', 'productoNombre') ?? '',
       cantidad: numero(f, 'quantity', 'cantidad') ?? 0,
       precioUsd: numero(f, 'priceOut', 'precioUsd'),
+      descuento: numero(f, 'discount', 'descuento') ?? 0,
       // Varios nombres posibles: es un ERP y no siempre llama igual a la misma columna.
       nota: texto(f, 'note', 'nota', 'observaciones', 'observacion', 'comment', 'comentario', 'description'),
       almacenCodigo: texto(f, 'objectCode', 'almacenCodigo'),
       almacenNombre: texto(f, 'objectName', 'almacenNombre'),
     }))
     .filter((l) => l.id && l.productoNombre);
+}
+
+/**
+ * El cobro de una venta: lo que trae `/axis/document-payments`, que es donde Ventra dice QUIÉN cobró.
+ *
+ * La línea de venta no trae al cajero. Sale de aquí, de `userName` («Caja#1-Daineris»). El pago
+ * NO trae el número de factura (`documentNumber` viene nulo), pero hay una fila por factura y se
+ * casa por fecha, cliente, almacén e importe: ver `cajeroVentra.ts`.
+ */
+export interface PagoVentra {
+  fecha: string;
+  cliente: string;
+  almacen: string;
+  importe: number;
+  cajero: string;
+}
+
+export async function pagosPorDocumento(database: string, desde: string, hasta: string): Promise<PagoVentra[]> {
+  const salida: PagoVentra[] = [];
+
+  // 200 por página; un día de la sucursal más grande son unas pocas docenas. El tope es por si
+  // Ventra devolviera algo absurdo: mejor un cajero que falta que un bucle.
+  for (let pagina = 1, total = 1; pagina <= total && pagina <= 30; pagina++) {
+    const d = await leer<{ rows?: Record<string, unknown>[]; totalPages?: number }>(
+      `/axis/document-payments?database=${encodeURIComponent(database)}&from=${desde}&to=${hasta}&page=${pagina}&pageSize=200`,
+    );
+
+    total = Number(d.totalPages) || 1;
+
+    for (const f of d.rows ?? []) {
+      // Sólo ventas (operType 2): los cobros de otras operaciones no son una factura de venta.
+      if (Number(f.operType) !== 2) continue;
+
+      const cajero = texto(f, 'userName');
+
+      if (!cajero) continue;
+      salida.push({
+        fecha: (texto(f, 'date') ?? '').slice(0, 10),
+        cliente: texto(f, 'partnerName') ?? '',
+        almacen: texto(f, 'objectName') ?? '',
+        importe: numero(f, 'dueAmount') ?? 0,
+        cajero,
+      });
+    }
+  }
+
+  return salida;
 }

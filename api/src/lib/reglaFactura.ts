@@ -80,6 +80,12 @@ export function conservaSuFactura(
 export function camposParaCompletar(
   estadoFactura: string | null | undefined,
   estadoPedido: string | null | undefined,
+  /**
+   * El cajero que cobró la factura («Caja#1-Daineris»), si se sabe. Sale en `completadoPor` en
+   * lugar de «automático · factura»: lo que se pregunta de un pedido completado es quién lo facturó
+   * (Jose, 20/10/2026). Sin cajero se queda la marca de siempre.
+   */
+  cajero?: string | null,
 ): Record<string, unknown> | null {
   if (!estadoFactura || !FACTURADO.has(estadoFactura)) return null;
   if (estadoPedido === 'completada') return null;
@@ -87,7 +93,7 @@ export function camposParaCompletar(
   return {
     estado: 'completada',
     completedAt: new Date(),
-    completadoPor: POR_LA_FACTURA,
+    completadoPor: cajero?.trim() || POR_LA_FACTURA,
     completadoPorId: null,
   };
 }
