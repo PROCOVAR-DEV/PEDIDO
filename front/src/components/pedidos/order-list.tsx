@@ -512,6 +512,9 @@ function comoSeLeeElInstante(valor?: string | null): string | null {
   });
 }
 
+/** Letras mínimas para lanzar una búsqueda. Ver el efecto de la búsqueda más abajo. */
+const MIN_LETRAS_BUSQUEDA = 3;
+
 export const OrdersList = () => {
   const [page, setPage] = useState(1);
   const [estadosSel, setEstadosSel] = useState<string[]>([]);
@@ -1143,7 +1146,17 @@ export const OrdersList = () => {
   }, []);
 
   // Debounced search with cleanup
+  //
+  // No se busca con 1 o 2 letras: con tan poco texto Postgres no puede usar el índice y recorre
+  // todos los pedidos y líneas (498 ms de mediana con una letra y 821 ms con dos, contra 93 con
+  // tres). Y como se sigue escribiendo, el navegador cancela la petición —el 50 % y el 72 %— pero
+  // el servidor la termina igual. Con la distancia a Cuba eso se vive como una pantalla lenta o
+  // parada (Roxana, Camagüey, 20/10/2026). Al vaciar el campo sí se vuelve a la lista entera.
   useEffect(() => {
+    const largo = searchValue.trim().length;
+
+    if (largo > 0 && largo < MIN_LETRAS_BUSQUEDA) return;
+
     const timeoutId = setTimeout(() => {
       setDebouncedSearch(searchValue);
     }, 300);
@@ -1491,6 +1504,11 @@ export const OrdersList = () => {
               variant="bordered"
               onChange={(e) => setSearchValue(e.target.value)}
               onClear={() => setSearchValue("")}
+              description={
+                searchValue.trim().length > 0 && searchValue.trim().length < MIN_LETRAS_BUSQUEDA
+                  ? `Escribe al menos ${MIN_LETRAS_BUSQUEDA} letras para buscar`
+                  : undefined
+              }
             />
             {/* Quitarlos todos de una.
                 Sólo cuando hay alguno puesto: un botón que no hace nada ocupa sitio y
