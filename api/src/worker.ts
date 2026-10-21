@@ -14,7 +14,6 @@ import { arrancarSondeoVentra } from './lib/sondeoVentra';
 import { arrancarCotejoFacturacion, cotejarUnaVez } from './lib/cotejoFacturacion';
 import { arrancarTelefonos } from './lib/telefonoCliente';
 import { arrancarTasaCambio } from './lib/tasaCambio';
-import { arrancarEspejo, clientesDesdeCrm } from './lib/espejoDeFuera';
 
 /**
  * Avisar a las pantallas de que salió un aviso, como mucho una vez cada pocos segundos.
@@ -131,10 +130,6 @@ async function main() {
   // El teléfono del cliente, sacado de sus propios pedidos. Aquí y no en la API porque
   // es un repaso a toda la tabla: no puede colgar del arranque de quien atiende.
   arrancarTelefonos();
-
-  // Clientes del CRM y vendedores de Accesos (CLIENTES_DESDE_CRM / VENDEDORES_DESDE_ACCESOS).
-  // Sin los interruptores no hace nada.
-  arrancarEspejo();
 
   arrancarWebhooks();
 
@@ -341,13 +336,6 @@ async function programarSyncDiario(pq: NonNullable<ReturnType<typeof parrandaQue
   try {
     for (const r of await pq.getRepeatableJobs()) {
       await pq.removeRepeatableByKey(r.key);
-    }
-
-    // Con los clientes del CRM, el CRM es quien habla con Parranda: dos dueños escribiendo
-    // código y ubicación se pisarían. El sync a mano (POST /clientes/sync-parranda) sigue.
-    if (clientesDesdeCrm()) {
-      console.log('[worker] Parranda: sync programado APAGADO (CLIENTES_DESDE_CRM=1)');
-      return;
     }
 
     await pq.add(

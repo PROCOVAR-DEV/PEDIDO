@@ -20,7 +20,6 @@
  */
 import { Prisma } from '@prisma/client';
 import { nombreComparable, codigoComparable } from './nombreVendedor';
-import { clientesDesdeCrm, idLocalDeCodigoCrm } from './espejoDeFuera';
 
 /**
  * Prisma, tarde: `prismaClient` abre la conexión al cargarse, y las pruebas de la validación
@@ -313,11 +312,6 @@ async function clienteDelCrm(p: PedidoCrm, sucursalId: string): Promise<{ id: st
   const prisma = await base();
   const nombre = nombreComparable(p.cliente.nombre);
   const codigo = p.cliente.codigoCcsa;
-
-  // Con los clientes espejados del CRM, el importado de aquí lleva su id en el código.
-  const idLocal = clientesDesdeCrm() ? idLocalDeCodigoCrm(p.cliente.codigo) : null;
-  const porId = idLocal ? await prisma.cliente.findUnique({ where: { id: idLocal } }) : null;
-  if (porId) return porId;
 
   const porCodigo = codigo ? await prisma.cliente.findFirst({ where: { sucursalId, codigo } }) : null;
   if (porCodigo) return porCodigo;
