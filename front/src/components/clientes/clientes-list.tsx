@@ -124,7 +124,11 @@ export const ClientesList = () => {
   const puedeReasignar =
     !!session?.isGlobalAdmin ||
     ["SUPERVISOR", "GERENTE", "ADMINISTRADOR"].includes(session?.rol ?? "");
-  const [seleccionando, setSeleccionando] = useState(false);
+  // Dos modos de selección múltiple, con el mismo panel: reasignar y dar de baja.
+  const [modo, setModo] = useState<null | "reasignar" | "baja">(null);
+  const seleccionando = modo !== null;
+  // Quiénes entran en la ventana de baja: los marcados, o el cliente de «Ver Detalles».
+  const [paraBaja, setParaBaja] = useState<Cliente[]>([]);
   const [marcados, setMarcados] = useState<Map<string, Cliente>>(new Map());
   const reasignar = useDisclosure();
   const baja = useDisclosure();
@@ -139,7 +143,7 @@ export const ClientesList = () => {
       return n;
     });
   const salirDeSeleccion = () => {
-    setSeleccionando(false);
+    setModo(null);
     setMarcados(new Map());
   };
   const [copiedClienteId, setCopiedClienteId] = useState<string | null>(null);
@@ -369,16 +373,20 @@ export const ClientesList = () => {
         <>
           {puedeReasignar && (
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                color={seleccionando ? "default" : "primary"}
-                size="sm"
-                variant={seleccionando ? "flat" : "ghost"}
-                onPress={() =>
-                  seleccionando ? salirDeSeleccion() : setSeleccionando(true)
-                }
-              >
-                {seleccionando ? "Salir del modo reasignar" : "Modo reasignar"}
-              </Button>
+              {seleccionando ? (
+                <Button color="default" size="sm" variant="flat" onPress={salirDeSeleccion}>
+                  {modo === "baja" ? "Salir del modo dar de baja" : "Salir del modo reasignar"}
+                </Button>
+              ) : (
+                <>
+                  <Button color="primary" size="sm" variant="ghost" onPress={() => setModo("reasignar")}>
+                    Modo reasignar
+                  </Button>
+                  <Button color="danger" size="sm" variant="ghost" onPress={() => setModo("baja")}>
+                    Modo dar de baja
+                  </Button>
+                </>
+              )}
               {seleccionando && (
                 <>
                   <Button
@@ -407,7 +415,9 @@ export const ClientesList = () => {
                 className={cn(
                   cards({ border: "default" }),
                   seleccionando && "cursor-pointer",
-                  seleccionando && marcados.has(cliente.id) && "ring-2 ring-primary",
+                  seleccionando &&
+                    marcados.has(cliente.id) &&
+                    (modo === "baja" ? "ring-2 ring-danger" : "ring-2 ring-primary"),
                 )}
               >
                 <CardBody
@@ -755,6 +765,19 @@ export const ClientesList = () => {
                 </div>
               </ModalBody>
               <ModalFooter>
+                {puedeReasignar && selectedCliente && (
+                  <Button
+                    color={selectedCliente.activo === false ? "primary" : "danger"}
+                    variant="flat"
+                    onPress={() => {
+                      setModoBaja(selectedCliente.activo === false ? "reactivar" : "baja");
+                      setParaBaja([selectedCliente]);
+                      baja.onOpen();
+                    }}
+                  >
+                    {selectedCliente.activo === false ? "Reactivar cliente" : "Dar de baja"}
+                  </Button>
+                )}
                 <Button color="default" variant="light" onPress={onClose}>
                   Cerrar
                 </Button>
@@ -765,15 +788,18 @@ export const ClientesList = () => {
       </Modal>
       {seleccionando && (
         <PanelSeleccion
+          modo={modo}
           marcados={[...marcados.values()]}
           onLimpiar={() => setMarcados(new Map())}
           onQuitar={alternarMarca}
           onReactivar={() => {
             setModoBaja("reactivar");
+            setParaBaja([...marcados.values()]);
             baja.onOpen();
           }}
           onBaja={() => {
             setModoBaja("baja");
+            setParaBaja([...marcados.values()]);
             baja.onOpen();
           }}
           onReasignar={reasignar.onOpen}
@@ -781,12 +807,13 @@ export const ClientesList = () => {
         />
       )}
       <BajaClientes
-        clientes={[...marcados.values()]}
+        clientes={paraBaja}
         isOpen={baja.isOpen}
         modo={modoBaja}
         onClose={baja.onClose}
         onHecho={() => {
           salirDeSeleccion();
+          onClose();
           fetchClientes();
         }}
       />

@@ -12,6 +12,7 @@ const POR_PAGINA = 6;
  * la estiraría sin fin. Aquí tiene su propia paginación y su propio alto, y se puede plegar.
  */
 export const PanelSeleccion = ({
+  modo,
   marcados,
   onQuitar,
   onLimpiar,
@@ -20,6 +21,7 @@ export const PanelSeleccion = ({
   onReactivar,
   onSalir,
 }: {
+  modo: "reasignar" | "baja" | null;
   marcados: Cliente[];
   onQuitar: (c: Cliente) => void;
   onLimpiar: () => void;
@@ -97,36 +99,38 @@ export const PanelSeleccion = ({
           )}
         </>
       )}
-      <div className="flex flex-col gap-2">
-        <Button
-          fullWidth
-          color="primary"
-          isDisabled={marcados.length === 0}
-          size="sm"
-          onPress={onReasignar}
-        >
-          Reasignar a otro vendedor
-        </Button>
-        <div className="flex gap-2">
+      <div className="flex gap-2">
+        {modo === "baja" ? (
+          <>
+            <Button
+              fullWidth
+              color="danger"
+              isDisabled={marcados.length === 0}
+              size="sm"
+              onPress={onBaja}
+            >
+              Dar de baja
+            </Button>
+            {marcados.some((c) => c.activo === false) && (
+              <Button fullWidth size="sm" variant="flat" onPress={onReactivar}>
+                Reactivar
+              </Button>
+            )}
+          </>
+        ) : (
           <Button
             fullWidth
-            color="danger"
+            color="primary"
             isDisabled={marcados.length === 0}
             size="sm"
-            variant="flat"
-            onPress={onBaja}
+            onPress={onReasignar}
           >
-            Dar de baja
+            Reasignar a otro vendedor
           </Button>
-          {marcados.some((c) => c.activo === false) && (
-            <Button fullWidth size="sm" variant="flat" onPress={onReactivar}>
-              Reactivar
-            </Button>
-          )}
-          <Button size="sm" variant="flat" onPress={onSalir}>
-            Salir
-          </Button>
-        </div>
+        )}
+        <Button size="sm" variant="flat" onPress={onSalir}>
+          Salir
+        </Button>
       </div>
     </div>
   );
