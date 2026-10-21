@@ -550,26 +550,33 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /clientes/:id/reasignar-vendedor { vendedorId, desdeVendedorId? }
-// Pasa los pedidos del cliente al vendedor nuevo (ver lib/reasignarCliente) y deja una fila
-// de historial por pedido. Solo Administrador (de SU sucursal) y los roles globales.
-router.post('/:id/reasignar-vendedor', async (req, res) => {
+// POST /clientes/reasignar-vendedor { clienteIds: string[], vendedorId, desdeVendedorId? }
+// Pasa los pedidos de VARIOS clientes al vendedor nuevo (ver lib/reasignarCliente) y deja una
+// fila de historial por pedido. Todos tienen que ser de la misma sucursal que el vendedor.
+// Solo Administrador (de SU sucursal) y los roles globales.
+router.post('/reasignar-vendedor', async (req, res) => {
   const ctx = getRequesterContext(req);
   if (!ctx.canManageUsers) {
     return res.status(403).json({ error: 'Solo un Administrador puede reasignar clientes.' });
   }
+  const ids: string[] = Array.isArray(req.body?.clienteIds)
+    ? [...new Set<string>(req.body.clienteIds.filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()))]
+    : [];
   const vendedorId = typeof req.body?.vendedorId === 'string' ? req.body.vendedorId.trim() : '';
   const desde = typeof req.body?.desdeVendedorId === 'string' ? req.body.desdeVendedorId.trim() : '';
+  if (ids.length === 0) return res.status(400).json({ error: 'No hay clientes elegidos.' });
+  if (ids.length > 500) return res.status(400).json({ error: 'Demasiados clientes de una vez (máximo 500).' });
   if (!vendedorId) return res.status(400).json({ error: 'Falta el vendedor nuevo.' });
 
   try {
-    const cliente = await prisma.cliente.findUnique({
-      where: { id: req.params.id },
-      select: { id: true, nombre: true, sucursalId: true },
+    const clientes = await prisma.cliente.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, sucursalId: true },
     });
     // Un Administrador solo toca clientes de su sucursal; los globales, de cualquiera.
-    if (!cliente || (!ctx.isGlobalAdmin && cliente.sucursalId !== ctx.sucursalId)) {
-      return res.status(404).json({ error: 'Cliente no encontrado' });
+    // Si falta alguno (o es de otra sucursal) no se hace NADA: mejor parar que dejar a medias.
+    if (clientes.length !== ids.length || (!ctx.isGlobalAdmin && clientes.some((c) => c.sucursalId !== ctx.sucursalId))) {
+      return res.status(404).json({ error: 'Algún cliente no se encontró.' });
     }
 
     const nuevo = await prisma.vendedor.findUnique({
@@ -578,13 +585,13 @@ router.post('/:id/reasignar-vendedor', async (req, res) => {
     });
     if (!nuevo || !nuevo.activo) return res.status(400).json({ error: 'El vendedor no existe o está de baja.' });
     // Nunca a un vendedor de otra sucursal: los pedidos quedarían ocultos para su sucursal.
-    if (nuevo.sucursalId !== cliente.sucursalId) {
-      return res.status(400).json({ error: 'El vendedor es de otra sucursal que el cliente.' });
+    if (clientes.some((c) => c.sucursalId !== nuevo.sucursalId)) {
+      return res.status(400).json({ error: 'Todos los clientes tienen que ser de la misma sucursal que el vendedor.' });
     }
 
     const pedidos = (
       await prisma.pedido.findMany({
-        where: { clienteId: cliente.id },
+        where: { clienteId: { in: ids } },
         select: { id: true, vendedorId: true, vendedor: { select: { nombre: true } } },
       })
     ).map((p) => ({ id: p.id, vendedorId: p.vendedorId, vendedorNombre: p.vendedor?.nombre ?? null }));
@@ -608,10 +615,10 @@ router.post('/:id/reasignar-vendedor', async (req, res) => {
       );
     }
 
-    return res.json({ movidos: plan.mover.length, yaSuyos: plan.yaSuyos, vendedor: nuevo.nombre });
+    return res.json({ clientes: ids.length, movidos: plan.mover.length, yaSuyos: plan.yaSuyos, vendedor: nuevo.nombre });
   } catch (error) {
-    console.error('Error reasignando cliente:', error);
-    return res.status(500).json({ error: 'Error al reasignar el cliente' });
+    console.error('Error reasignando clientes:', error);
+    return res.status(500).json({ error: 'Error al reasignar los clientes' });
   }
 });
 

@@ -15,13 +15,14 @@ import {
   ModalFooter,
   useDisclosure,
   Chip,
+  Checkbox,
 } from "@heroui/react";
 import { useEffect, useState, useCallback } from "react";
 
 import { ACCION_TARJETA, cards } from "../primitives";
 import Icons from "../icons/iconify";
 import { VendedorSelect } from "../vendedor-select";
-import { ReasignarCliente } from "./reasignar-cliente";
+import { ReasignarClientes } from "./reasignar-clientes";
 
 import { cn, copyTextToClipboard } from "@/lib/utils";
 import { registrarCopia } from "@/lib/registrar-copia";
@@ -115,6 +116,27 @@ export const ClientesList = () => {
     Array<{ id: string; nombre: string; clientes: number }>
   >([]);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
+  // Modo selección (solo Administrador y roles globales): se marcan varios clientes y se
+  // pasan a otro vendedor de una vez. Se guardan los objetos, no solo los ids, porque la
+  // selección sobrevive al cambio de página y el modal necesita su sucursal.
+  const puedeReasignar =
+    !!session?.isGlobalAdmin || session?.rol === "ADMINISTRADOR";
+  const [seleccionando, setSeleccionando] = useState(false);
+  const [marcados, setMarcados] = useState<Map<string, Cliente>>(new Map());
+  const reasignar = useDisclosure();
+  const alternarMarca = (c: Cliente) =>
+    setMarcados((m) => {
+      const n = new Map(m);
+
+      if (n.has(c.id)) n.delete(c.id);
+      else n.set(c.id, c);
+
+      return n;
+    });
+  const salirDeSeleccion = () => {
+    setSeleccionando(false);
+    setMarcados(new Map());
+  };
   const [copiedClienteId, setCopiedClienteId] = useState<string | null>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
 
@@ -332,6 +354,59 @@ export const ClientesList = () => {
       {/* Clientes List */}
       {!isLoading && !error && datos != null && (
         <>
+          {puedeReasignar && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                color={seleccionando ? "default" : "primary"}
+                size="sm"
+                variant={seleccionando ? "flat" : "ghost"}
+                onPress={() =>
+                  seleccionando ? salirDeSeleccion() : setSeleccionando(true)
+                }
+              >
+                {seleccionando ? "Salir del modo reasignar" : "Modo reasignar"}
+              </Button>
+              {seleccionando && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="light"
+                    onPress={() =>
+                      setMarcados((m) => {
+                        const n = new Map(m);
+
+                        clientes.forEach((c) => n.set(c.id, c));
+
+                        return n;
+                      })
+                    }
+                  >
+                    Marcar los de esta página
+                  </Button>
+                  {marcados.size > 0 && (
+                    <Button
+                      size="sm"
+                      variant="light"
+                      onPress={() => setMarcados(new Map())}
+                    >
+                      Desmarcar todos
+                    </Button>
+                  )}
+                  <span className="text-sm text-default-600">
+                    {marcados.size} marcado{marcados.size === 1 ? "" : "s"}
+                  </span>
+                  <Button
+                    color="primary"
+                    isDisabled={marcados.size === 0}
+                    size="sm"
+                    onPress={reasignar.onOpen}
+                  >
+                    Reasignar a otro vendedor
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             {clientes.map((cliente) => (
               <Card
@@ -341,6 +416,13 @@ export const ClientesList = () => {
                 <CardBody>
                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
                     <div className="flex items-center gap-4 w-full md:w-auto">
+                      {seleccionando && (
+                        <Checkbox
+                          aria-label={`Marcar a ${cliente.nombre}`}
+                          isSelected={marcados.has(cliente.id)}
+                          onValueChange={() => alternarMarca(cliente)}
+                        />
+                      )}
                       <Icons.client className="size-10 min-w-10 text-primary" />
                       <div>
                         <p className="font-semibold text-lg">
@@ -408,10 +490,6 @@ export const ClientesList = () => {
                       >
                         Ver Detalles
                       </Button>
-                      <ReasignarCliente
-                        cliente={cliente}
-                        onHecho={() => fetchClientes()}
-                      />
                     </div>
                   </div>
                 </CardBody>
@@ -683,6 +761,15 @@ export const ClientesList = () => {
           )}
         </ModalContent>
       </Modal>
+      <ReasignarClientes
+        clientes={[...marcados.values()]}
+        isOpen={reasignar.isOpen}
+        onClose={reasignar.onClose}
+        onHecho={() => {
+          salirDeSeleccion();
+          fetchClientes();
+        }}
+      />
     </div>
   );
 };
