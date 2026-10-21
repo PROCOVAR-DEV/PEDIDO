@@ -22,6 +22,8 @@ export interface Cliente {
   geolocalizacion?: string | null;
   /** Provincia: en Parranda es la provincia y aquí es la sucursal. Es el mismo dato. */
   sucursalId?: string | null;
+  /** Dado de baja a mano: no se reactiva solo ni entran sus pedidos nuevos. */
+  bajaManual?: boolean;
   sucursalNombre?: string | null;
   sucursalCodigo?: string | null;
   /** Distancia al almacén, medida por Entrega. Se guarda en el cliente, no en el pedido. */

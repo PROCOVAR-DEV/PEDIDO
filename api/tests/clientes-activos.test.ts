@@ -156,3 +156,18 @@ test('dos fichas con el mismo nombre normalizado: manda la activa con código, n
   assert.deepEqual(d.desactivar, []);
   assert.deepEqual(d.reactivar, []);
 });
+
+test('dado de baja A MANO: aunque Parranda lo siga mandando, no se reactiva', () => {
+  const r = relleno(60);
+  const baja = { ...cli('b', 'CLIENTE DE BAJA', 'SC01TCP0009', false), bajaManual: true };
+  const d = decidirActivos([...r.map((x) => x.c), baja], [...r.map((x) => x.f), fila('Cliente De Baja', 'SC01TCP0009')], norm);
+
+  assert.deepEqual(d.reactivar, []);
+});
+
+test('el inactivo de Parranda (sin baja manual) sí vuelve cuando Parranda lo manda', () => {
+  const r = relleno(60);
+  const d = decidirActivos([...r.map((x) => x.c), cli('v', 'VUELVE', 'SC01TCP0010', false)], [...r.map((x) => x.f), fila('Vuelve', 'SC01TCP0010')], norm);
+
+  assert.deepEqual(d.reactivar, ['v']);
+});

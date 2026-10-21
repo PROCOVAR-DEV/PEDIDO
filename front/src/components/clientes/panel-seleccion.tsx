@@ -16,12 +16,16 @@ export const PanelSeleccion = ({
   onQuitar,
   onLimpiar,
   onReasignar,
+  onBaja,
+  onReactivar,
   onSalir,
 }: {
   marcados: Cliente[];
   onQuitar: (c: Cliente) => void;
   onLimpiar: () => void;
   onReasignar: () => void;
+  onBaja: () => void;
+  onReactivar: () => void;
   onSalir: () => void;
 }) => {
   const [pagina, setPagina] = useState(1);
@@ -93,7 +97,7 @@ export const PanelSeleccion = ({
           )}
         </>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2">
         <Button
           fullWidth
           color="primary"
@@ -103,9 +107,26 @@ export const PanelSeleccion = ({
         >
           Reasignar a otro vendedor
         </Button>
-        <Button size="sm" variant="flat" onPress={onSalir}>
-          Salir
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            fullWidth
+            color="danger"
+            isDisabled={marcados.length === 0}
+            size="sm"
+            variant="flat"
+            onPress={onBaja}
+          >
+            Dar de baja
+          </Button>
+          {marcados.some((c) => c.activo === false) && (
+            <Button fullWidth size="sm" variant="flat" onPress={onReactivar}>
+              Reactivar
+            </Button>
+          )}
+          <Button size="sm" variant="flat" onPress={onSalir}>
+            Salir
+          </Button>
+        </div>
       </div>
     </div>
   );

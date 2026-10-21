@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../prismaClient';
 import { emitEvent } from '../lib/events';
 import { anotarHistorial } from '../lib/historialPedido';
-import { puedeReasignar } from '../lib/reasignarCliente';
+import { ESTADO_ABIERTO, puedeReasignar } from '../lib/reasignarCliente';
 import { avisarReasignacion } from '../lib/avisoReasignacion';
 import {
   nombreComparable,
@@ -470,8 +470,9 @@ router.delete('/:id', async (req, res) => {
 });
 
 // POST /vendedores/:id/reasignar-clientes { vendedorId }
-// Pasa TODOS los pedidos de este vendedor (y con ellos sus clientes) a otro de la misma
-// sucursal, de una vez. Cada pedido deja su fila de historial. Solo Supervisor para arriba (de su
+// Pasa TODOS los clientes de este vendedor a otro de la misma sucursal, de una vez: quedan del
+// nuevo desde ahora y sus pedidos abiertos con ellos; lo ya hecho se queda con este. Cada pedido
+// movido deja su fila de historial. Solo Supervisor para arriba (de su
 // sucursal) y roles globales. El de origen puede estar de baja: es el caso típico.
 router.post('/:id/reasignar-clientes', async (req, res) => {
   const ctx = getRequesterContext(req);
@@ -496,34 +497,45 @@ router.post('/:id/reasignar-clientes', async (req, res) => {
       return res.status(400).json({ error: 'Los dos vendedores tienen que ser de la misma sucursal.' });
     }
 
-    const pedidos = await prisma.pedido.findMany({
-      where: { vendedorId: origen.id },
-      select: { id: true, clienteId: true },
-    });
-    if (pedidos.length > 0) {
-      await prisma.pedido.updateMany({ where: { vendedorId: origen.id }, data: { vendedorId: destino.id } });
+    // Los clientes de este vendedor: los que le asignaron a mano y, sin asignación, aquellos cuyo
+    // pedido MÁS RECIENTE es suyo (es el mismo criterio con que Entrega y la lista dicen de quién es).
+    const clientes = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT c.id FROM "Client" c
+       WHERE c."sucursalId" = ${origen.sucursalId}
+         AND c."bajaManual" = false
+         AND ( c."vendedorAsignadoId" = ${origen.id}
+            OR ( c."vendedorAsignadoId" IS NULL
+                 AND ( SELECT o."sellerId" FROM "Order" o
+                        WHERE o."clientId" = c.id ORDER BY o.fecha DESC LIMIT 1 ) = ${origen.id} ) )`;
+    const ids = clientes.map((c) => c.id);
+
+    // Lo ya hecho se queda con él; solo los pedidos ABIERTOS de esos clientes pasan al nuevo.
+    const abiertos = ids.length
+      ? await prisma.pedido.findMany({
+          where: { clienteId: { in: ids }, vendedorId: origen.id, estado: ESTADO_ABIERTO },
+          select: { id: true },
+        })
+      : [];
+    if (ids.length > 0) {
+      await prisma.cliente.updateMany({ where: { id: { in: ids } }, data: { vendedorAsignadoId: destino.id } });
+    }
+    if (abiertos.length > 0) {
+      await prisma.pedido.updateMany({ where: { id: { in: abiertos.map((p) => p.id) } }, data: { vendedorId: destino.id } });
       await anotarHistorial(
         { origen: 'pantalla', por: ctx.username ?? null },
-        pedidos.map((p) => ({
+        abiertos.map((p) => ({
           pedidoId: p.id,
           tipo: 'editado' as const,
           campo: 'vendedor',
           antes: origen.nombre,
           despues: destino.nombre,
-          nota: 'Todos los clientes del vendedor reasignados a otro',
+          nota: 'Pedido abierto: todos los clientes del vendedor se reasignaron a otro',
         })),
       );
     }
+    await avisarReasignacion(ids, origen.sucursalId);
 
-    if (pedidos.length > 0) {
-      await avisarReasignacion([...new Set(pedidos.map((p) => p.clienteId).filter((x): x is string => !!x))], origen.sucursalId);
-    }
-
-    return res.json({
-      pedidos: pedidos.length,
-      clientes: new Set(pedidos.map((p) => p.clienteId).filter(Boolean)).size,
-      vendedor: destino.nombre,
-    });
+    return res.json({ clientes: ids.length, pedidosAbiertos: abiertos.length, vendedor: destino.nombre });
   } catch (error) {
     console.error('Error reasignando clientes del vendedor:', error);
     return res.status(500).json({ error: 'Error al reasignar los clientes' });

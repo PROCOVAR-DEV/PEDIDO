@@ -1,31 +1,32 @@
 /**
- * Reasignar un cliente a otro vendedor.
+ * Reasignar un cliente a otro vendedor: «borrón y cuenta nueva».
  *
- * En PEDIDO el cliente no tiene vendedor propio: «es de un vendedor» solo porque tiene pedidos
- * suyos. Reasignarlo es, por tanto, pasar esos pedidos al vendedor nuevo.
+ * Lo YA HECHO se queda con el vendedor de entonces —lo que se le realizó—: los pedidos
+ * completados (y expirados) no se tocan. Solo los pedidos ABIERTOS (`en_proceso`) pasan al
+ * vendedor nuevo, porque los va a atender él. De ahí en adelante el cliente es suyo
+ * (`Cliente.vendedorAsignadoId`).
  */
-export type PedidoDelCliente = { id: string; vendedorId: string | null; vendedorNombre: string | null };
+export type PedidoDelCliente = {
+  id: string;
+  vendedorId: string | null;
+  vendedorNombre: string | null;
+  estado: string | null;
+};
 
 export type PlanReasignacion = {
-  /** Los pedidos que cambian de vendedor. */
+  /** Los pedidos abiertos que cambian de vendedor. */
   mover: PedidoDelCliente[];
-  /** Los que ya eran del vendedor nuevo. */
+  /** Los abiertos que ya eran del vendedor nuevo. */
   yaSuyos: number;
 };
 
-/**
- * `desdeVendedorId` limita el cambio a los pedidos de UN vendedor; sin él se mueven todos los
- * que no sean ya del nuevo. Los de otro vendedor quedan como estaban.
- */
-export function planReasignacion(
-  pedidos: PedidoDelCliente[],
-  vendedorNuevoId: string,
-  desdeVendedorId?: string | null,
-): PlanReasignacion {
-  const candidatos = desdeVendedorId ? pedidos.filter((p) => p.vendedorId === desdeVendedorId) : pedidos;
-  const mover = candidatos.filter((p) => p.vendedorId !== vendedorNuevoId);
+export const ESTADO_ABIERTO = 'en_proceso';
 
-  return { mover, yaSuyos: candidatos.length - mover.length };
+export function planReasignacion(pedidos: PedidoDelCliente[], vendedorNuevoId: string): PlanReasignacion {
+  const abiertos = pedidos.filter((p) => p.estado === ESTADO_ABIERTO);
+  const mover = abiertos.filter((p) => p.vendedorId !== vendedorNuevoId);
+
+  return { mover, yaSuyos: abiertos.length - mover.length };
 }
 
 /**

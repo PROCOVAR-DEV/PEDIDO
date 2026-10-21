@@ -697,6 +697,10 @@ router.get('/clients', async (req, res) => {
   // un cliente concreto lo quiere aunque esté inactivo (sus pedidos viejos cuelgan de él).
   const conInactivos = req.query.inactivos === '1' || req.query.inactivos === 'true';
 
+  const vendedorFiltro = vendedor
+    ? await prisma.vendedor.findFirst({ where: { OR: [{ codigo: vendedor }, { id: vendedor }] }, select: { id: true } })
+    : null;
+
   const clientes = await prisma.cliente.findMany({
     where: {
       ...sucursalScope,
@@ -704,17 +708,16 @@ router.get('/clients', async (req, res) => {
       ...(soloConGeo ? { latitud: { not: null }, longitud: { not: null } } : {}),
       ...(pidioIds || conInactivos ? {} : { activo: true }),
       ...(since ? { updatedAt: { gt: new Date(since) } } : {}),
-      // Por vendedor: los que tienen ALGÚN pedido suyo.
+      // Por vendedor: los que le asignaron a mano y, sin asignación, los que tienen ALGÚN pedido suyo.
       ...(vendedor
-        ? {
-            pedidos: {
-              some: {
-                vendedor: {
-                  OR: [{ codigo: vendedor }, { id: vendedor }],
-                },
-              },
-            },
-          }
+        ? vendedorFiltro
+          ? {
+              OR: [
+                { vendedorAsignadoId: vendedorFiltro.id },
+                { vendedorAsignadoId: null, pedidos: { some: { vendedorId: vendedorFiltro.id } } },
+              ],
+            }
+          : { id: { in: [] } }
         : {}),
     },
     include: { sucursal: { select: { codigo: true, nombre: true } } },
@@ -762,7 +765,8 @@ router.get('/clients', async (req, res) => {
 
   // Los vendedores que salgan, una vez cada uno: son unas decenas aunque los clientes
   // sean miles.
-  const idsVendedores = [...new Set(pares.map((r) => r.vendedorId))];
+  // Los asignados a mano también salen, aunque no tengan pedidos con ese vendedor.
+  const idsVendedores = [...new Set([...pares.map((r) => r.vendedorId), ...clientes.map((c) => c.vendedorAsignadoId).filter((x): x is string => !!x)])];
   const vendedores = idsVendedores.length
     ? await prisma.vendedor.findMany({
         where: { id: { in: idsVendedores } },
@@ -853,7 +857,8 @@ router.get('/clients', async (req, res) => {
     sucursalCodigo: c.sucursal?.codigo || null,
     sucursalNombre: c.sucursal?.nombre || null,
     // Quién le vende ahora, con su sucursal y su gestor.
-    vendedor: leVendeAhora.get(c.id)?.vend ?? null,
+    // Si lo reasignaron a mano, manda esa asignación; si no, el de su pedido más reciente.
+    vendedor: (c.vendedorAsignadoId && porId.get(c.vendedorAsignadoId)) || (leVendeAhora.get(c.id)?.vend ?? null),
     // Y todos los que le han vendido, por si le compra a más de uno.
     vendedores: todosSus.get(c.id) ?? [],
     // Para que la tablet sepa por dónde seguir en la próxima sync.

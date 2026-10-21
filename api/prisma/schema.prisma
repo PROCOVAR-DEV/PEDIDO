@@ -492,6 +492,17 @@ model Cliente {
   /// de «un cliente que Parranda dejó de mandar» (sin sucesor).
   sucesorId      String?
 
+  /// De quién es el cliente DESDE AHORA, cuando alguien lo reasignó a mano. Sin él, el cliente es
+  /// de quien tiene su pedido más reciente. Con él, los pedidos pasados se quedan con el vendedor
+  /// de entonces (lo que se le realizó) y la cartera —Entrega, la lista de clientes— lo pone aquí.
+  vendedorAsignadoId String?
+
+  /// Dado de baja A MANO. Se queda inactivo aunque Parranda lo siga mandando, y los pedidos NUEVOS
+  /// que traigan los archivos para él se omiten (los ya cargados siguen actualizándose).
+  bajaManual Boolean   @default(false)
+  bajaPor    String?
+  bajaEn     DateTime?
+
   /**
    * El teléfono del cliente. Hasta ahora sólo vivía en el PEDIDO.
    * Eso hacía imposible contestar "¿tienes el teléfono de este cliente?" sin abrir
@@ -510,6 +521,7 @@ model Cliente {
 
   @@unique([sucursalId, codigo])
   @@index([activo])
+  @@index([vendedorAsignadoId])
   // El nombre identifica al cliente dentro de su sucursal (asi lo busca la importacion).
   // Sin este unico, dos pedidos del mismo cliente importados a la vez creaban el cliente
   // dos veces, y el pedido salia con folio -1, -2... en vez de actualizarse.

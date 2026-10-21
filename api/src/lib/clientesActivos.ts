@@ -24,7 +24,7 @@
  *
  * Puro, sin base de datos, para poder probarlo.
  */
-export type ClienteBase = { id: string; nombre: string; sucursalId: string | null; codigo: string | null; activo: boolean; sucesorId?: string | null };
+export type ClienteBase = { id: string; nombre: string; sucursalId: string | null; codigo: string | null; activo: boolean; sucesorId?: string | null; bajaManual?: boolean };
 export type FilaDeParranda = { sucursalId: string; nombre: string; codigo: string | null };
 
 export type DecisionActivos = {
@@ -139,6 +139,8 @@ export function decidirActivos(
   // reactivarlas traería de vuelta los duplicados.
   for (const c of existentes) {
     if (c.activo) continue;
+    // Dado de baja a mano: Parranda lo siga mandando o no, no vuelve solo.
+    if (c.bajaManual) continue;
     const enUso = conPedidoReciente.has(c.id) && !c.sucesorId && !superados.has(c.id);
     if (vistos.has(c.id) || enUso) reactivar.push(c.id);
   }

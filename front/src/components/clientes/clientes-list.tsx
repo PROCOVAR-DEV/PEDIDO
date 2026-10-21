@@ -24,6 +24,7 @@ import Icons from "../icons/iconify";
 import { VendedorSelect } from "../vendedor-select";
 import { ReasignarClientes } from "./reasignar-clientes";
 import { PanelSeleccion } from "./panel-seleccion";
+import { BajaClientes } from "./baja-clientes";
 
 import { cn, copyTextToClipboard } from "@/lib/utils";
 import { registrarCopia } from "@/lib/registrar-copia";
@@ -126,6 +127,8 @@ export const ClientesList = () => {
   const [seleccionando, setSeleccionando] = useState(false);
   const [marcados, setMarcados] = useState<Map<string, Cliente>>(new Map());
   const reasignar = useDisclosure();
+  const baja = useDisclosure();
+  const [modoBaja, setModoBaja] = useState<"baja" | "reactivar">("baja");
   const alternarMarca = (c: Cliente) =>
     setMarcados((m) => {
       const n = new Map(m);
@@ -436,7 +439,7 @@ export const ClientesList = () => {
                           {/* Parranda ya no lo manda. Sus pedidos viejos siguen aquí. */}
                           {cliente.activo === false && (
                             <Chip className="w-fit" color="danger" size="sm" variant="flat">
-                              Inactivo
+                              {cliente.bajaManual ? "Baja manual" : "Inactivo"}
                             </Chip>
                           )}
                           {/* Quién trajo al cliente: el vendedor de su pedido más
@@ -765,10 +768,28 @@ export const ClientesList = () => {
           marcados={[...marcados.values()]}
           onLimpiar={() => setMarcados(new Map())}
           onQuitar={alternarMarca}
+          onReactivar={() => {
+            setModoBaja("reactivar");
+            baja.onOpen();
+          }}
+          onBaja={() => {
+            setModoBaja("baja");
+            baja.onOpen();
+          }}
           onReasignar={reasignar.onOpen}
           onSalir={salirDeSeleccion}
         />
       )}
+      <BajaClientes
+        clientes={[...marcados.values()]}
+        isOpen={baja.isOpen}
+        modo={modoBaja}
+        onClose={baja.onClose}
+        onHecho={() => {
+          salirDeSeleccion();
+          fetchClientes();
+        }}
+      />
       <ReasignarClientes
         clientes={[...marcados.values()]}
         isOpen={reasignar.isOpen}

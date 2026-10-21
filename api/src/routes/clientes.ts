@@ -9,7 +9,7 @@ import {
 } from '../lib/sucursalContext';
 import { parrandaQueue } from '../lib/queues';
 import { anotarHistorial } from '../lib/historialPedido';
-import { planReasignacion, puedeReasignar } from '../lib/reasignarCliente';
+import { ESTADO_ABIERTO, planReasignacion, puedeReasignar } from '../lib/reasignarCliente';
 import { avisarReasignacion } from '../lib/avisoReasignacion';
 
 const router = express.Router();
@@ -382,9 +382,13 @@ router.get('/', async (req, res) => {
     const vendedorId = (req.query.vendedorId as string)?.trim();
 
     if (vendedorId) {
-      where.pedidos = where.pedidos
+      // De un vendedor: los que le asignaron a mano y, sin asignación, los que tienen pedidos suyos.
+      const pedidosSuyos = where.pedidos
         ? { some: { AND: [where.pedidos.some, { vendedorId }] } }
         : { some: { vendedorId } };
+
+      delete where.pedidos;
+      where.AND = [...(where.AND ?? []), { OR: [{ vendedorAsignadoId: vendedorId }, { vendedorAsignadoId: null, pedidos: pedidosSuyos }] }];
     }
     const searchTerm = search?.trim().toUpperCase();
 
@@ -513,10 +517,18 @@ router.get('/', async (req, res) => {
     const sucursalesTodas = await prisma.sucursal.findMany({ select: { id: true, nombre: true, codigo: true } });
     const porSucursal = new Map(sucursalesTodas.map((x) => [x.id, x]));
 
+    // Un cliente reasignado a mano es de su vendedor asignado, tenga los pedidos que tenga.
+    const idsAsignados = [...new Set(clientes.map((c) => c.vendedorAsignadoId).filter((x): x is string => !!x))];
+    const asignados = new Map(
+      (idsAsignados.length
+        ? await prisma.vendedor.findMany({ where: { id: { in: idsAsignados } }, select: { id: true, nombre: true, codigo: true } })
+        : []
+      ).map((v) => [v.id, v]),
+    );
     const clientesConVendedor = clientes.map((c) => ({
       ...c,
-      vendedorNombre: porCliente.get(c.id)?.vendedor ?? null,
-      vendedorCodigo: porCliente.get(c.id)?.codigo ?? null,
+      vendedorNombre: (c.vendedorAsignadoId && asignados.get(c.vendedorAsignadoId)?.nombre) || (porCliente.get(c.id)?.vendedor ?? null),
+      vendedorCodigo: (c.vendedorAsignadoId && asignados.get(c.vendedorAsignadoId)?.codigo) || (porCliente.get(c.id)?.codigo ?? null),
       otrosVendedores: porCliente.get(c.id)?.otros ?? 0,
       sucursalNombre: c.sucursalId ? porSucursal.get(c.sucursalId)?.nombre ?? null : null,
       sucursalCodigo: c.sucursalId ? porSucursal.get(c.sucursalId)?.codigo ?? null : null,
@@ -551,9 +563,10 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /clientes/reasignar-vendedor { clienteIds: string[], vendedorId, desdeVendedorId? }
-// Pasa los pedidos de VARIOS clientes al vendedor nuevo (ver lib/reasignarCliente) y deja una
-// fila de historial por pedido. Todos tienen que ser de la misma sucursal que el vendedor.
+// POST /clientes/reasignar-vendedor { clienteIds: string[], vendedorId }
+// Pasa VARIOS clientes al vendedor nuevo (ver lib/reasignarCliente): quedan suyos desde ahora y
+// sus pedidos ABIERTOS pasan con ellos; lo ya hecho se queda con el vendedor de entonces. Una
+// fila de historial por pedido movido. Todos tienen que ser de la misma sucursal que el vendedor.
 // Solo Supervisor para arriba (de SU sucursal; los globales, de cualquiera).
 router.post('/reasignar-vendedor', async (req, res) => {
   const ctx = getRequesterContext(req);
@@ -564,7 +577,6 @@ router.post('/reasignar-vendedor', async (req, res) => {
     ? [...new Set<string>(req.body.clienteIds.filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()))]
     : [];
   const vendedorId = typeof req.body?.vendedorId === 'string' ? req.body.vendedorId.trim() : '';
-  const desde = typeof req.body?.desdeVendedorId === 'string' ? req.body.desdeVendedorId.trim() : '';
   if (ids.length === 0) return res.status(400).json({ error: 'No hay clientes elegidos.' });
   if (ids.length > 500) return res.status(400).json({ error: 'Demasiados clientes de una vez (máximo 500).' });
   if (!vendedorId) return res.status(400).json({ error: 'Falta el vendedor nuevo.' });
@@ -592,12 +604,15 @@ router.post('/reasignar-vendedor', async (req, res) => {
 
     const pedidos = (
       await prisma.pedido.findMany({
-        where: { clienteId: { in: ids } },
-        select: { id: true, vendedorId: true, vendedor: { select: { nombre: true } } },
+        where: { clienteId: { in: ids }, estado: ESTADO_ABIERTO },
+        select: { id: true, estado: true, vendedorId: true, vendedor: { select: { nombre: true } } },
       })
-    ).map((p) => ({ id: p.id, vendedorId: p.vendedorId, vendedorNombre: p.vendedor?.nombre ?? null }));
+    ).map((p) => ({ id: p.id, estado: p.estado, vendedorId: p.vendedorId, vendedorNombre: p.vendedor?.nombre ?? null }));
 
-    const plan = planReasignacion(pedidos, nuevo.id, desde || null);
+    // De ahora en adelante son del vendedor nuevo, tengan o no pedidos abiertos.
+    await prisma.cliente.updateMany({ where: { id: { in: ids } }, data: { vendedorAsignadoId: nuevo.id } });
+
+    const plan = planReasignacion(pedidos, nuevo.id);
     if (plan.mover.length > 0) {
       await prisma.pedido.updateMany({
         where: { id: { in: plan.mover.map((p) => p.id) } },
@@ -611,12 +626,12 @@ router.post('/reasignar-vendedor', async (req, res) => {
           campo: 'vendedor',
           antes: p.vendedorNombre,
           despues: nuevo.nombre,
-          nota: 'Cliente reasignado a otro vendedor',
+          nota: 'Pedido abierto: el cliente se reasignó a otro vendedor',
         })),
       );
     }
 
-    if (plan.mover.length > 0) await avisarReasignacion(ids, nuevo.sucursalId);
+    await avisarReasignacion(ids, nuevo.sucursalId);
 
     return res.json({ clientes: ids.length, movidos: plan.mover.length, yaSuyos: plan.yaSuyos, vendedor: nuevo.nombre });
   } catch (error) {
@@ -624,6 +639,51 @@ router.post('/reasignar-vendedor', async (req, res) => {
     return res.status(500).json({ error: 'Error al reasignar los clientes' });
   }
 });
+
+// POST /clientes/baja { clienteIds } y POST /clientes/reactivar { clienteIds }
+// Dar de baja A MANO: el cliente queda inactivo (no sale al reparto ni a Entrega) y, aunque
+// Parranda lo siga mandando, no se reactiva solo. Los pedidos NUEVOS que traigan los archivos para
+// él se omiten; los ya cargados siguen igual y el cliente no se pierde. Mismos permisos y alcance
+// que reasignar. `reactivar` lo deshace.
+async function cambiarBaja(req: express.Request, res: express.Response, baja: boolean) {
+  const ctx = getRequesterContext(req);
+  if (!puedeReasignar(ctx.role, ctx.isGlobalAdmin)) {
+    return res.status(403).json({ error: 'Solo un Supervisor o un rol superior puede dar de baja clientes.' });
+  }
+  const ids: string[] = Array.isArray(req.body?.clienteIds)
+    ? [...new Set<string>(req.body.clienteIds.filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()))]
+    : [];
+  if (ids.length === 0) return res.status(400).json({ error: 'No hay clientes elegidos.' });
+  if (ids.length > 500) return res.status(400).json({ error: 'Demasiados clientes de una vez (máximo 500).' });
+
+  try {
+    const clientes = await prisma.cliente.findMany({ where: { id: { in: ids } }, select: { id: true, sucursalId: true } });
+    if (clientes.length !== ids.length || (!ctx.isGlobalAdmin && clientes.some((c) => c.sucursalId !== ctx.sucursalId))) {
+      return res.status(404).json({ error: 'Algún cliente no se encontró.' });
+    }
+
+    await prisma.cliente.updateMany({
+      where: { id: { in: ids } },
+      data: baja
+        ? { activo: false, desactivadoAt: new Date(), bajaManual: true, bajaPor: ctx.username ?? null, bajaEn: new Date() }
+        : { activo: true, desactivadoAt: null, bajaManual: false, bajaPor: null, bajaEn: null },
+    });
+    // Un aviso por sucursal implicada: el reparto repasa esa sucursal y deja de ver (o vuelve a ver) a estos.
+    for (const sucursalId of new Set(clientes.map((c) => c.sucursalId))) {
+      await avisarReasignacion(
+        clientes.filter((c) => c.sucursalId === sucursalId).map((c) => c.id),
+        sucursalId,
+      );
+    }
+
+    return res.json({ clientes: ids.length, baja });
+  } catch (error) {
+    console.error('Error cambiando la baja de clientes:', error);
+    return res.status(500).json({ error: 'Error al cambiar el estado de los clientes' });
+  }
+}
+router.post('/baja', (req, res) => cambiarBaja(req, res, true));
+router.post('/reactivar', (req, res) => cambiarBaja(req, res, false));
 
 // GET /clientes/:id - Get cliente details
 router.get('/:id', async (req, res) => {

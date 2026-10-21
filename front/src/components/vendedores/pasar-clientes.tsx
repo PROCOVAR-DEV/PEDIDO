@@ -75,7 +75,7 @@ export const PasarClientes = ({
       if (!r.ok) throw new Error(json.error || "No se pudo reasignar");
       addToast({
         title: "Clientes reasignados",
-        description: `${json.clientes} cliente${json.clientes === 1 ? "" : "s"} (${json.pedidos} pedidos) pasaron a ${json.vendedor}.`,
+        description: `${json.clientes} cliente${json.clientes === 1 ? "" : "s"} pasaron a ${json.vendedor} (${json.pedidosAbiertos} pedidos abiertos).`,
         color: "success",
       });
       onClose();
@@ -111,9 +111,9 @@ export const PasarClientes = ({
               <ModalHeader>Pasar los clientes de {vendedor.nombre}</ModalHeader>
               <ModalBody>
                 <p className="text-sm text-default-600">
-                  Sus {pedidos} pedidos (con todos sus clientes) pasarán al
-                  vendedor que elijas, de la misma sucursal. Cada cambio queda en
-                  el historial del pedido.
+                  Todos sus clientes pasarán a ser del vendedor que elijas, de la
+                  misma sucursal. Sus pedidos abiertos (en proceso) van con
+                  ellos; lo ya hecho se queda con {vendedor.nombre}.
                 </p>
                 <VendedorSelect
                   claveTodos=""

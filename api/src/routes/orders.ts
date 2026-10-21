@@ -2611,6 +2611,23 @@ async function processOrderRecord(
   });
 
   /**
+   * CLIENTE DADO DE BAJA A MANO: el pedido NUEVO no entra.
+   *
+   * Los archivos se separan por fila, así que las demás filas del archivo entran con normalidad.
+   * Un pedido que ya estaba cargado de este cliente sigue actualizándose como siempre: la baja
+   * corta lo nuevo, no toca lo que ya existe. Se cuenta en `omitidos`, con su detalle, para que
+   * se vea por qué no entró (es el mismo contador del borrado a mano).
+   */
+  if (!existingOrder && client.bajaManual) {
+    results.omitidos = (results.omitidos ?? 0) + 1;
+    if (Array.isArray(results.omitidosDetalle) && results.omitidosDetalle.length < 50) {
+      results.omitidosDetalle.push({ folio: baseFolio, cliente: `${client.nombre ?? ''} (cliente dado de baja)` });
+    }
+
+    return;
+  }
+
+  /**
    * BORRADO A MANO: no se vuelve a crear.
    *
    * Va DESPUÉS de buscar el pedido y sólo cuando no existe. Un pedido vivo manda sobre
@@ -2828,7 +2845,7 @@ async function processOrderRecord(
     // Entró un pedido NUEVO: el cliente está en uso, aunque Parranda ya no lo mande. Se reactiva
     // (y el sync de la tarde no lo vuelve a apagar mientras tenga pedidos de los últimos 30 días).
     // Sólo con un pedido nuevo: un archivo que reenvía pedidos viejos no resucita a nadie.
-    if (!client.activo) {
+    if (!client.activo && !client.bajaManual) {
       await prisma.cliente.update({ where: { id: client.id }, data: { activo: true, desactivadoAt: null } });
     }
   }

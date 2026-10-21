@@ -164,7 +164,7 @@ export async function processParrandaSync(
   // nada. Ahora solo se escribe lo que de verdad cambio.
   const existentes = await prisma.cliente.findMany({
     select: {
-      id: true, nombre: true, sucursalId: true, activo: true,
+      id: true, nombre: true, sucursalId: true, activo: true, bajaManual: true,
       codigo: true, direccion: true, municipio: true,
       latitud: true, longitud: true, geolocalizacion: true,
     },
@@ -444,7 +444,7 @@ export async function processParrandaSync(
   // fallara a mitad, la excepción sale antes y nadie se desactiva por una pasada cortada.
   // Se marcan inactivos y NO se borran: los pedidos viejos siguen colgando de ellos.
   try {
-    const frescos = await prisma.cliente.findMany({ select: { id: true, nombre: true, sucursalId: true, codigo: true, activo: true, sucesorId: true } });
+    const frescos = await prisma.cliente.findMany({ select: { id: true, nombre: true, sucursalId: true, codigo: true, activo: true, sucesorId: true, bajaManual: true } });
     // Fichas con un pedido de los últimos 30 días: están en uso, y no se desactivan por no venir.
     const hace30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
     const conPedido = await prisma.pedido.groupBy({ by: ['clienteId'], where: { createdAt: { gte: hace30 } } });

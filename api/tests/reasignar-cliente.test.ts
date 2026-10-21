@@ -3,27 +3,31 @@ import assert from 'node:assert/strict';
 
 import { planReasignacion, puedeReasignar } from '../src/lib/reasignarCliente';
 
-const p = (id: string, vendedorId: string | null) => ({ id, vendedorId, vendedorNombre: vendedorId });
+const p = (id: string, vendedorId: string | null, estado: string | null = 'en_proceso') => ({
+  id,
+  vendedorId,
+  vendedorNombre: vendedorId,
+  estado,
+});
 
-test('mueve todos los que no son del vendedor nuevo', () => {
+test('solo se mueven los pedidos abiertos que no son ya del vendedor nuevo', () => {
   const r = planReasignacion([p('1', 'a'), p('2', 'b'), p('3', 'n'), p('4', null)], 'n');
 
   assert.deepEqual(r.mover.map((x) => x.id), ['1', '2', '4']);
   assert.equal(r.yaSuyos, 1);
 });
 
-test('con desde, solo toca los pedidos de ese vendedor', () => {
-  const r = planReasignacion([p('1', 'a'), p('2', 'b'), p('3', 'a')], 'n', 'a');
+test('lo completado o expirado se queda con el vendedor de entonces', () => {
+  const r = planReasignacion([p('1', 'a', 'completada'), p('2', 'a', 'expirada'), p('3', 'a', null), p('4', 'a')], 'n');
 
-  assert.deepEqual(r.mover.map((x) => x.id), ['1', '3']);
-  assert.equal(r.yaSuyos, 0);
+  assert.deepEqual(r.mover.map((x) => x.id), ['4']);
 });
 
-test('si ya son todos suyos no hay nada que mover', () => {
-  const r = planReasignacion([p('1', 'n'), p('2', 'n')], 'n');
+test('si no hay nada abierto no hay nada que mover', () => {
+  const r = planReasignacion([p('1', 'a', 'completada')], 'n');
 
   assert.equal(r.mover.length, 0);
-  assert.equal(r.yaSuyos, 2);
+  assert.equal(r.yaSuyos, 0);
 });
 
 test('reasignan Supervisor y todo lo de arriba; Gestor y Operador no', () => {

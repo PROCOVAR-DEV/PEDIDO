@@ -77,8 +77,8 @@ export const ReasignarClientes = ({
         title: "Clientes reasignados",
         description:
           json.movidos > 0
-            ? `${json.clientes} cliente${json.clientes === 1 ? "" : "s"} (${json.movidos} pedidos) pasaron a ${json.vendedor}.`
-            : `Ya era todo de ${json.vendedor}.`,
+            ? `${json.clientes} cliente${json.clientes === 1 ? "" : "s"} pasaron a ${json.vendedor} (${json.movidos} pedidos abiertos).`
+            : `${json.clientes} cliente${json.clientes === 1 ? "" : "s"} pasaron a ${json.vendedor}.`,
         color: "success",
       });
       onClose();
@@ -131,8 +131,9 @@ export const ReasignarClientes = ({
                     ))}
                   </ul>
                   <p className="text-sm text-default-600">
-                    Todos sus pedidos pasarán al vendedor que elijas. Cada cambio
-                    queda en el historial del pedido.
+                    Desde ahora son del vendedor que elijas. Sus pedidos abiertos
+                    (en proceso) pasan con ellos; lo ya hecho se queda con el
+                    vendedor de entonces.
                   </p>
                   <VendedorSelect
                     claveTodos=""
