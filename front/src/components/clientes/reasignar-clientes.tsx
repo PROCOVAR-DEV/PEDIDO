@@ -110,6 +110,19 @@ export const ReasignarClientes = ({
                 </p>
               ) : (
                 <>
+                  <ul className="max-h-40 list-disc overflow-y-auto pl-5 text-sm">
+                    {clientes.map((c) => (
+                      <li key={c.id}>
+                        {c.nombre}
+                        {c.vendedorNombre ? (
+                          <span className="text-default-500">
+                            {" "}
+                            · hoy de {c.vendedorNombre}
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
                   <p className="text-sm text-default-600">
                     Todos sus pedidos pasarán al vendedor que elijas. Cada cambio
                     queda en el historial del pedido.

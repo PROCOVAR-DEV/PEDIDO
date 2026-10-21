@@ -162,6 +162,11 @@ export const ClientesList = () => {
   );
 
   const clientes = datos?.data ?? SIN_CLIENTES;
+  // En modo reasignar los marcados suben arriba (de cualquier página o filtro) y el resto
+  // de la página sigue debajo, sin repetirlos.
+  const visibles = seleccionando
+    ? [...marcados.values(), ...clientes.filter((c) => !marcados.has(c.id))]
+    : clientes;
   const pagination = datos?.pagination ?? PAGINACION_VACIA;
   // Los vendedores de la sucursal, con cuantos clientes trajo cada uno. Se pide
   // UNA vez por sucursal: es una lista corta y no cambia mientras se filtra.
@@ -408,8 +413,30 @@ export const ClientesList = () => {
               )}
             </div>
           )}
+          {seleccionando && marcados.size > 0 && (
+            <Card className={cn(cards({ border: "default" }))}>
+              <CardBody className="gap-2">
+                <p className="text-sm font-semibold">
+                  Seleccionados ({marcados.size})
+                </p>
+                <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
+                  {[...marcados.values()].map((c) => (
+                    <Chip
+                      key={c.id}
+                      size="sm"
+                      variant="flat"
+                      onClose={() => alternarMarca(c)}
+                    >
+                      {c.nombre}
+                      {c.vendedorNombre ? ` · ${c.vendedorNombre}` : ""}
+                    </Chip>
+                  ))}
+                </div>
+              </CardBody>
+            </Card>
+          )}
           <div className="flex flex-col gap-2">
-            {clientes.map((cliente) => (
+            {visibles.map((cliente) => (
               <Card
                 key={cliente.id}
                 className={cn(cards({ border: "default" }))}
