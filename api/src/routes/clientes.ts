@@ -10,6 +10,7 @@ import {
 import { parrandaQueue } from '../lib/queues';
 import { anotarHistorial } from '../lib/historialPedido';
 import { planReasignacion, puedeReasignar } from '../lib/reasignarCliente';
+import { avisarReasignacion } from '../lib/avisoReasignacion';
 
 const router = express.Router();
 
@@ -614,6 +615,8 @@ router.post('/reasignar-vendedor', async (req, res) => {
         })),
       );
     }
+
+    if (plan.mover.length > 0) await avisarReasignacion(ids, nuevo.sucursalId);
 
     return res.json({ clientes: ids.length, movidos: plan.mover.length, yaSuyos: plan.yaSuyos, vendedor: nuevo.nombre });
   } catch (error) {

@@ -4,6 +4,7 @@ import prisma from '../prismaClient';
 import { emitEvent } from '../lib/events';
 import { anotarHistorial } from '../lib/historialPedido';
 import { puedeReasignar } from '../lib/reasignarCliente';
+import { avisarReasignacion } from '../lib/avisoReasignacion';
 import {
   nombreComparable,
   codigoDesdeNombre,
@@ -512,6 +513,10 @@ router.post('/:id/reasignar-clientes', async (req, res) => {
           nota: 'Todos los clientes del vendedor reasignados a otro',
         })),
       );
+    }
+
+    if (pedidos.length > 0) {
+      await avisarReasignacion([...new Set(pedidos.map((p) => p.clienteId).filter((x): x is string => !!x))], origen.sucursalId);
     }
 
     return res.json({
