@@ -1,4 +1,4 @@
-import { Button, Chip, Pagination } from "@heroui/react";
+import { Button, Pagination } from "@heroui/react";
 import { useEffect, useState } from "react";
 
 import type { Cliente } from "@/stores/datos/clientes";
@@ -36,7 +36,7 @@ export const PanelSeleccion = ({
   const visibles = marcados.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-xl border border-default-200 bg-content1 p-3 shadow-xl">
+    <div className="fixed bottom-4 right-4 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-xl border border-default-200 bg-content1 p-3 shadow-xl">
       <div className="flex items-center justify-between gap-2">
         <button
           className="text-sm font-semibold"
@@ -54,20 +54,33 @@ export const PanelSeleccion = ({
       </div>
       {!plegado && marcados.length > 0 && (
         <>
-          <div className="flex flex-col gap-1">
+          <ul className="flex flex-col divide-y divide-default-100">
             {visibles.map((c) => (
-              <Chip
-                key={c.id}
-                className="max-w-full"
-                size="sm"
-                variant="flat"
-                onClose={() => onQuitar(c)}
-              >
-                {c.nombre}
-                {c.vendedorNombre ? ` · ${c.vendedorNombre}` : ""}
-              </Chip>
+              <li key={c.id} className="flex items-center gap-2 py-1.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium" title={c.nombre}>
+                    {c.nombre}
+                  </p>
+                  {c.vendedorNombre && (
+                    <p
+                      className="truncate text-xs text-default-500"
+                      title={c.vendedorNombre}
+                    >
+                      {c.vendedorNombre}
+                    </p>
+                  )}
+                </div>
+                <button
+                  aria-label={`Quitar a ${c.nombre}`}
+                  className="shrink-0 rounded-full px-2 py-1 text-default-500 hover:bg-default-100 hover:text-danger"
+                  type="button"
+                  onClick={() => onQuitar(c)}
+                >
+                  ✕
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
           {paginas > 1 && (
             <Pagination
               showControls
