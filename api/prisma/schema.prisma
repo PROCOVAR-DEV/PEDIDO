@@ -104,6 +104,9 @@ model Vendedor {
   // vendedor duplicado o mal escrito: saber si lo tecleó alguien o vino del
   // archivo, que son dos problemas distintos y se arreglan de forma distinta.
   creadoPor  String?
+  /// El id de la persona en Accesos, cuando el vendedor viene de allí
+  /// (VENDEDORES_DESDE_ACCESOS=1, lib/espejoDeFuera.ts). Vacío = nació aquí (CSV o a mano).
+  accesosId  String?   @unique
   createdAt  DateTime  @default(now())
   pedidos    Pedido[]
 
@@ -512,6 +515,10 @@ model Cliente {
    * último que dio el cliente es el bueno.
    */
   telefono String?
+
+  /// El id del cliente en el CRM, que es su dueño desde el 21/10/2026 (CLIENTES_DESDE_CRM=1,
+  /// lib/espejoDeFuera.ts). Vacío = sólo existe aquí (llegó por un CSV y el CRM no lo tiene).
+  crmId String? @unique
 
   createdAt DateTime @default(now())
   // Fecha de la última sincronización (Parranda) del cliente. La setea Prisma en cada
