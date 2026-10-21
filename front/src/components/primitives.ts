@@ -82,4 +82,4 @@ export const cards = tv({
  * Eliminar) los últimos se salían de la tarjeta y quedaban cortados. Desde `md` ocupa lo suyo.
  */
 export const ACCION_TARJETA =
-  "grow basis-[7.5rem] px-2 md:grow-0 md:basis-auto md:px-4";
+  "grow basis-[7rem] px-2 text-small md:grow-0 md:basis-auto md:px-3";
