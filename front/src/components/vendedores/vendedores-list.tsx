@@ -15,6 +15,10 @@ import {
   SelectItem,
   Chip,
   Pagination,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
+  DropdownItem,
   addToast,
 } from "@heroui/react";
 import { useEffect, useState, useCallback } from "react";
@@ -100,6 +104,12 @@ export const VendedoresList = () => {
   // pegarlo en el sistema contable. No gestiona: ni alta/baja, ni reasignar
   // gestor, ni ver el detalle. Ocultarlo aqui es por comodidad — quien lo
   // impide de verdad es el servidor, que rechaza esas rutas para su rol.
+  // Reasignar clientes: Supervisor y todo lo de arriba (la API lo vuelve a comprobar).
+  const puedeReasignar =
+    !!session?.isGlobalAdmin ||
+    ["SUPERVISOR", "GERENTE", "ADMINISTRADOR"].includes(session?.rol ?? "");
+  // El vendedor al que se le están pasando los clientes (la ventana está abierta si hay uno).
+  const [pasando, setPasando] = useState<Vendedor | null>(null);
   const puedeGestionar = !["operador", "gestor"].includes(
     String(user?.role || "").toLowerCase(),
   );
@@ -716,7 +726,10 @@ export const VendedoresList = () => {
                           ]}
                         </Select>
                       )}
-                      <div className="flex flex-row flex-wrap gap-2">
+                      {/* Fila de acciones: SIEMPRE una sola línea. Lo frecuente (copiar, ver
+                          detalles) va a la vista y de ancho fijo; lo demás, que es menos usado o
+                          destructivo, va en «Más». Con 2 acciones o con 10 mide lo mismo. */}
+                      <div className="flex flex-row flex-nowrap items-center gap-2">
                         <Button
                           className={ACCION_TARJETA}
                           color={
@@ -743,38 +756,65 @@ export const VendedoresList = () => {
                             >
                               Ver Detalles
                             </Button>
-                            <PasarClientes
-                              todos={vendedores}
-                              vendedor={vendedor}
-                              onHecho={() => fetchVendedores()}
-                            />
-                            <Button
-                              className={ACCION_TARJETA}
-                              color={vendedor.activo ? "danger" : "success"}
-                              isLoading={savingId === vendedor.id}
-                              variant="ghost"
-                              onPress={() =>
-                                handleSetActivo(vendedor, !vendedor.activo)
-                              }
-                            >
-                              {vendedor.activo ? "Dar de baja" : "Reactivar"}
-                            </Button>
-                            {/* Eliminar SÓLO si no tiene ni un pedido. Con histórico
-                                detrás, lo que corresponde es darlo de baja: enseñar un
-                                botón que el servidor va a rechazar es hacer que alguien
-                                lo pulse para descubrir que no. */}
-                            {(vendedor._count?.pedidos ?? 0) === 0 && (
-                              <Button
-                                className={ACCION_TARJETA}
-                                color="danger"
-                                isLoading={savingId === vendedor.id}
-                                startContent={<Icons.trash className="size-5" />}
-                                variant="flat"
-                                onPress={() => handleEliminar(vendedor)}
+                            <Dropdown placement="bottom-end">
+                              <DropdownTrigger>
+                                <Button
+                                  isIconOnly
+                                  aria-label="Más acciones"
+                                  className="shrink-0"
+                                  isLoading={savingId === vendedor.id}
+                                  variant="ghost"
+                                >
+                                  <span aria-hidden className="text-xl leading-none">
+                                    ⋯
+                                  </span>
+                                </Button>
+                              </DropdownTrigger>
+                              <DropdownMenu
+                                aria-label="Más acciones del vendedor"
+                                disabledKeys={
+                                  (vendedor._count?.pedidos ?? 0) === 0 ||
+                                  !vendedor.sucursalId
+                                    ? ["pasar"]
+                                    : []
+                                }
+                                onAction={(clave) => {
+                                  if (clave === "pasar") setPasando(vendedor);
+                                  else if (clave === "baja")
+                                    handleSetActivo(vendedor, !vendedor.activo);
+                                  else if (clave === "eliminar")
+                                    handleEliminar(vendedor);
+                                }}
                               >
-                                Eliminar
-                              </Button>
-                            )}
+                                {[
+                                  ...(puedeReasignar
+                                    ? [
+                                        <DropdownItem key="pasar" description="Pasan a otro vendedor de su sucursal">
+                                          Pasar sus clientes
+                                        </DropdownItem>,
+                                      ]
+                                    : []),
+                                  <DropdownItem
+                                    key="baja"
+                                    className={vendedor.activo ? "text-danger" : "text-success"}
+                                    color={vendedor.activo ? "danger" : "success"}
+                                  >
+                                    {vendedor.activo ? "Dar de baja" : "Reactivar"}
+                                  </DropdownItem>,
+                                  /* Eliminar SÓLO si no tiene ni un pedido. Con histórico detrás,
+                                     lo que corresponde es darlo de baja: enseñar una opción que el
+                                     servidor va a rechazar es hacer que alguien la pulse para
+                                     descubrir que no. */
+                                  ...((vendedor._count?.pedidos ?? 0) === 0
+                                    ? [
+                                        <DropdownItem key="eliminar" className="text-danger" color="danger">
+                                          Eliminar
+                                        </DropdownItem>,
+                                      ]
+                                    : []),
+                                ]}
+                              </DropdownMenu>
+                            </Dropdown>
                           </>
                         )}
                       </div>
@@ -819,6 +859,15 @@ export const VendedoresList = () => {
       )}
 
       {/* Vendedor Details Modal */}
+      {pasando && (
+        <PasarClientes
+          isOpen
+          todos={vendedores}
+          vendedor={pasando}
+          onClose={() => setPasando(null)}
+          onHecho={() => fetchVendedores()}
+        />
+      )}
       <Modal
         isDismissable={false}
         isOpen={isOpen}

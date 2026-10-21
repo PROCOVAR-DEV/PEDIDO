@@ -479,7 +479,7 @@ export const ClientesList = () => {
                       </div>
                     </div>
                     <div
-                      className="flex flex-row flex-wrap gap-2 w-full md:w-auto"
+                      className="flex flex-row flex-nowrap gap-2 w-full md:w-auto"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Button

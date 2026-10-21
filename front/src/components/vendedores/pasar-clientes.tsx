@@ -6,15 +6,12 @@ import {
   ModalFooter,
   ModalHeader,
   addToast,
-  useDisclosure,
 } from "@heroui/react";
 import { useMemo, useState } from "react";
 
 import { VendedorSelect } from "../vendedor-select";
-import { ACCION_TARJETA } from "../primitives";
 
 import { getApiBaseUrl } from "@/config";
-import { useAuthStore } from "@/stores/authStore";
 import type { Vendedor } from "@/stores/datos/vendedores";
 
 /**
@@ -27,14 +24,16 @@ import type { Vendedor } from "@/stores/datos/vendedores";
 export const PasarClientes = ({
   vendedor,
   todos,
+  isOpen,
+  onClose,
   onHecho,
 }: {
   vendedor: Vendedor;
   todos: Vendedor[];
+  isOpen: boolean;
+  onClose: () => void;
   onHecho: () => void;
 }) => {
-  const { session } = useAuthStore();
-  const { isOpen, onOpen, onClose } = useDisclosure();
   const [elegido, setElegido] = useState("");
   const [guardando, setGuardando] = useState(false);
 
@@ -50,14 +49,6 @@ export const PasarClientes = ({
     [todos, vendedor],
   );
 
-  const pedidos = vendedor._count?.pedidos ?? 0;
-
-  if (
-    !session?.isGlobalAdmin &&
-    !["SUPERVISOR", "GERENTE", "ADMINISTRADOR"].includes(session?.rol ?? "")
-  )
-    return null;
-  if (pedidos === 0 || !vendedor.sucursalId) return null;
 
   const guardar = async () => {
     setGuardando(true);
@@ -93,18 +84,7 @@ export const PasarClientes = ({
 
   return (
     <>
-      <Button
-        className={ACCION_TARJETA}
-        color="default"
-        variant="ghost"
-        onPress={() => {
-          setElegido("");
-          onOpen();
-        }}
-      >
-        Pasar sus clientes
-      </Button>
-      <Modal isOpen={isOpen} placement="center" onClose={onClose}>
+      <Modal isDismissable={false} isOpen={isOpen} placement="center" onClose={onClose}>
         <ModalContent>
           {() => (
             <>
