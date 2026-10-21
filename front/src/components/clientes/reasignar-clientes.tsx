@@ -94,8 +94,15 @@ export const ReasignarClientes = ({
     }
   };
 
+  // isDismissable={false}: la lista del selector se dibuja FUERA de la ventana, y con el cierre
+  // por pulsar fuera, elegir un vendedor cerraba todo antes de poder reasignar.
   return (
-    <Modal isOpen={isOpen} placement="center" onClose={onClose}>
+    <Modal
+      isDismissable={false}
+      isOpen={isOpen}
+      placement="center"
+      onClose={onClose}
+    >
       <ModalContent>
         {() => (
           <>
