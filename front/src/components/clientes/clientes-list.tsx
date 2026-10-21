@@ -23,6 +23,7 @@ import { ACCION_TARJETA, cards } from "../primitives";
 import Icons from "../icons/iconify";
 import { VendedorSelect } from "../vendedor-select";
 import { ReasignarClientes } from "./reasignar-clientes";
+import { PanelSeleccion } from "./panel-seleccion";
 
 import { cn, copyTextToClipboard } from "@/lib/utils";
 import { registrarCopia } from "@/lib/registrar-copia";
@@ -162,10 +163,13 @@ export const ClientesList = () => {
   );
 
   const clientes = datos?.data ?? SIN_CLIENTES;
-  // En modo reasignar los marcados suben arriba (de cualquier página o filtro) y el resto
-  // de la página sigue debajo, sin repetirlos.
+  // En modo reasignar, los marcados DE ESTA PÁGINA suben arriba. Los de otras páginas no se
+  // traen aquí (estirarían la lista): viven en el panel flotante.
   const visibles = seleccionando
-    ? [...marcados.values(), ...clientes.filter((c) => !marcados.has(c.id))]
+    ? [
+        ...clientes.filter((c) => marcados.has(c.id)),
+        ...clientes.filter((c) => !marcados.has(c.id)),
+      ]
     : clientes;
   const pagination = datos?.pagination ?? PAGINACION_VACIA;
   // Los vendedores de la sucursal, con cuantos clientes trajo cada uno. Se pide
@@ -389,66 +393,30 @@ export const ClientesList = () => {
                   >
                     Marcar los de esta página
                   </Button>
-                  {marcados.size > 0 && (
-                    <Button
-                      size="sm"
-                      variant="light"
-                      onPress={() => setMarcados(new Map())}
-                    >
-                      Desmarcar todos
-                    </Button>
-                  )}
-                  <span className="text-sm text-default-600">
-                    {marcados.size} marcado{marcados.size === 1 ? "" : "s"}
-                  </span>
-                  <Button
-                    color="primary"
-                    isDisabled={marcados.size === 0}
-                    size="sm"
-                    onPress={reasignar.onOpen}
-                  >
-                    Reasignar a otro vendedor
-                  </Button>
                 </>
               )}
             </div>
-          )}
-          {seleccionando && marcados.size > 0 && (
-            <Card className={cn(cards({ border: "default" }))}>
-              <CardBody className="gap-2">
-                <p className="text-sm font-semibold">
-                  Seleccionados ({marcados.size})
-                </p>
-                <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
-                  {[...marcados.values()].map((c) => (
-                    <Chip
-                      key={c.id}
-                      size="sm"
-                      variant="flat"
-                      onClose={() => alternarMarca(c)}
-                    >
-                      {c.nombre}
-                      {c.vendedorNombre ? ` · ${c.vendedorNombre}` : ""}
-                    </Chip>
-                  ))}
-                </div>
-              </CardBody>
-            </Card>
           )}
           <div className="flex flex-col gap-2">
             {visibles.map((cliente) => (
               <Card
                 key={cliente.id}
-                className={cn(cards({ border: "default" }))}
+                className={cn(
+                  cards({ border: "default" }),
+                  seleccionando && "cursor-pointer",
+                  seleccionando && marcados.has(cliente.id) && "ring-2 ring-primary",
+                )}
               >
-                <CardBody>
+                <CardBody
+                  onClick={seleccionando ? () => alternarMarca(cliente) : undefined}
+                >
                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
                     <div className="flex items-center gap-4 w-full md:w-auto">
                       {seleccionando && (
                         <Checkbox
                           aria-label={`Marcar a ${cliente.nombre}`}
+                          className="pointer-events-none"
                           isSelected={marcados.has(cliente.id)}
-                          onValueChange={() => alternarMarca(cliente)}
                         />
                       )}
                       <Icons.client className="size-10 min-w-10 text-primary" />
@@ -497,7 +465,10 @@ export const ClientesList = () => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-row flex-wrap gap-2 w-full md:w-auto">
+                    <div
+                      className="flex flex-row flex-wrap gap-2 w-full md:w-auto"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Button
                         className={ACCION_TARJETA}
                         color={
@@ -789,6 +760,15 @@ export const ClientesList = () => {
           )}
         </ModalContent>
       </Modal>
+      {seleccionando && (
+        <PanelSeleccion
+          marcados={[...marcados.values()]}
+          onLimpiar={() => setMarcados(new Map())}
+          onQuitar={alternarMarca}
+          onReasignar={reasignar.onOpen}
+          onSalir={salirDeSeleccion}
+        />
+      )}
       <ReasignarClientes
         clientes={[...marcados.values()]}
         isOpen={reasignar.isOpen}
