@@ -37,6 +37,7 @@ import {
   type Gestor, type Sucursal } from "@/stores/datos/vendedores";
 import { useCerrarAlPulsarFuera } from "@/hooks/cerrar-al-pulsar-fuera";
 import { ACCION_TARJETA } from "@/components/primitives";
+import { PasarClientes } from "./pasar-clientes";
 
 // Los tipos Vendedor/Gestor viven en el store: los comparten quien los pinta y
 // quien los trae, y asi no se separan cuando cambie el api.
@@ -742,6 +743,11 @@ export const VendedoresList = () => {
                             >
                               Ver Detalles
                             </Button>
+                            <PasarClientes
+                              todos={vendedores}
+                              vendedor={vendedor}
+                              onHecho={() => fetchVendedores()}
+                            />
                             <Button
                               className={ACCION_TARJETA}
                               color={vendedor.activo ? "danger" : "success"}

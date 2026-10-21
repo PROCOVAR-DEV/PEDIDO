@@ -2,6 +2,7 @@ import express from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../prismaClient';
 import { emitEvent } from '../lib/events';
+import { anotarHistorial } from '../lib/historialPedido';
 import {
   nombreComparable,
   codigoDesdeNombre,
@@ -463,6 +464,63 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'No se pudo eliminar el vendedor' });
+  }
+});
+
+// POST /vendedores/:id/reasignar-clientes { vendedorId }
+// Pasa TODOS los pedidos de este vendedor (y con ellos sus clientes) a otro de la misma
+// sucursal, de una vez. Cada pedido deja su fila de historial. Solo Administrador (de su
+// sucursal) y roles globales. El de origen puede estar de baja: es el caso típico.
+router.post('/:id/reasignar-clientes', async (req, res) => {
+  const ctx = getRequesterContext(req);
+  if (!ctx.canManageUsers) {
+    return res.status(403).json({ error: 'Solo un Administrador puede reasignar clientes.' });
+  }
+  const destinoId = typeof req.body?.vendedorId === 'string' ? req.body.vendedorId.trim() : '';
+  if (!destinoId) return res.status(400).json({ error: 'Falta el vendedor nuevo.' });
+  if (destinoId === req.params.id) return res.status(400).json({ error: 'Elige otro vendedor.' });
+
+  try {
+    const [origen, destino] = await Promise.all([
+      prisma.vendedor.findUnique({ where: { id: req.params.id }, select: { id: true, nombre: true, sucursalId: true } }),
+      prisma.vendedor.findUnique({ where: { id: destinoId }, select: { id: true, nombre: true, sucursalId: true, activo: true } }),
+    ]);
+    if (!origen || (!ctx.isGlobalAdmin && origen.sucursalId !== ctx.sucursalId)) {
+      return res.status(404).json({ error: 'Vendedor no encontrado' });
+    }
+    if (!destino || !destino.activo) return res.status(400).json({ error: 'El vendedor nuevo no existe o está de baja.' });
+    // Nunca a otra sucursal (ni sin sucursal): los pedidos quedarían ocultos.
+    if (!origen.sucursalId || destino.sucursalId !== origen.sucursalId) {
+      return res.status(400).json({ error: 'Los dos vendedores tienen que ser de la misma sucursal.' });
+    }
+
+    const pedidos = await prisma.pedido.findMany({
+      where: { vendedorId: origen.id },
+      select: { id: true, clienteId: true },
+    });
+    if (pedidos.length > 0) {
+      await prisma.pedido.updateMany({ where: { vendedorId: origen.id }, data: { vendedorId: destino.id } });
+      await anotarHistorial(
+        { origen: 'pantalla', por: ctx.username ?? null },
+        pedidos.map((p) => ({
+          pedidoId: p.id,
+          tipo: 'editado' as const,
+          campo: 'vendedor',
+          antes: origen.nombre,
+          despues: destino.nombre,
+          nota: 'Todos los clientes del vendedor reasignados a otro',
+        })),
+      );
+    }
+
+    return res.json({
+      pedidos: pedidos.length,
+      clientes: new Set(pedidos.map((p) => p.clienteId).filter(Boolean)).size,
+      vendedor: destino.nombre,
+    });
+  } catch (error) {
+    console.error('Error reasignando clientes del vendedor:', error);
+    return res.status(500).json({ error: 'Error al reasignar los clientes' });
   }
 });
 
