@@ -911,36 +911,41 @@ router.delete('/:id', async (req, res) => {
      */
     const quien = getRequesterContext(req);
 
-    await prisma.$transaction([
-      // Si ya había una nota de este mismo pedido (se borró, se creó a mano, se volvió a
-      // borrar) se queda la última: dos filas para la misma llave no dicen nada nuevo.
-      prisma.pedidoBorrado.deleteMany({
-        where: {
-          sucursalId: existingOrder.sucursalId,
-          folioBase: folioBaseDe(existingOrder.folio),
-          vendedorId: existingOrder.vendedorId,
-          clienteId: existingOrder.clienteId,
-        },
-      }),
-      prisma.pedidoBorrado.create({
-        data: {
-          sucursalId: existingOrder.sucursalId,
-          folio: existingOrder.folio,
-          folioBase: folioBaseDe(existingOrder.folio),
-          vendedorId: existingOrder.vendedorId,
-          clienteId: existingOrder.clienteId,
-          clienteNombre: existingOrder.cliente?.nombre ?? null,
-          vendedorNombre: existingOrder.vendedor?.nombre ?? null,
-          vendedorCodigo: existingOrder.vendedor?.codigo ?? null,
-          lineas: existingOrder.items.length,
-          fecha: existingOrder.fecha,
-          borradoPorId: quien.userId ?? null,
-          borradoPor: quien.username ?? null,
-        },
-      }),
-      prisma.pedidoItem.deleteMany({ where: { pedidoId: id } }),
-      prisma.pedido.delete({ where: { id } }),
-    ]);
+    // Interactiva y con 20 s: la de lista usa el tope de 5 s de Prisma, y con el servidor cargado (un
+    // despliegue construyéndose, el 21/10/2026) pasó de 6,6 s y el borrado se cortó con un 500.
+    await prisma.$transaction(
+      async (tx) => {
+        // Si ya había una nota de este mismo pedido (se borró, se creó a mano, se volvió a
+        // borrar) se queda la última: dos filas para la misma llave no dicen nada nuevo.
+        await tx.pedidoBorrado.deleteMany({
+          where: {
+            sucursalId: existingOrder.sucursalId,
+            folioBase: folioBaseDe(existingOrder.folio),
+            vendedorId: existingOrder.vendedorId,
+            clienteId: existingOrder.clienteId,
+          },
+        });
+        await tx.pedidoBorrado.create({
+          data: {
+            sucursalId: existingOrder.sucursalId,
+            folio: existingOrder.folio,
+            folioBase: folioBaseDe(existingOrder.folio),
+            vendedorId: existingOrder.vendedorId,
+            clienteId: existingOrder.clienteId,
+            clienteNombre: existingOrder.cliente?.nombre ?? null,
+            vendedorNombre: existingOrder.vendedor?.nombre ?? null,
+            vendedorCodigo: existingOrder.vendedor?.codigo ?? null,
+            lineas: existingOrder.items.length,
+            fecha: existingOrder.fecha,
+            borradoPorId: quien.userId ?? null,
+            borradoPor: quien.username ?? null,
+          },
+        });
+        await tx.pedidoItem.deleteMany({ where: { pedidoId: id } });
+        await tx.pedido.delete({ where: { id } });
+      },
+      { timeout: 20_000 },
+    );
     emitEvent('pedido', { sucursalId: existingOrder.sucursalId, id, accion: 'delete' });
     /*
      * Y que el reparto lo quite: un pedido borrado que sigue en el camión es peor que uno
