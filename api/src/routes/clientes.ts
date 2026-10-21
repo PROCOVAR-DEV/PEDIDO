@@ -9,7 +9,7 @@ import {
 } from '../lib/sucursalContext';
 import { parrandaQueue } from '../lib/queues';
 import { anotarHistorial } from '../lib/historialPedido';
-import { planReasignacion } from '../lib/reasignarCliente';
+import { planReasignacion, puedeReasignar } from '../lib/reasignarCliente';
 
 const router = express.Router();
 
@@ -553,11 +553,11 @@ router.get('/', async (req, res) => {
 // POST /clientes/reasignar-vendedor { clienteIds: string[], vendedorId, desdeVendedorId? }
 // Pasa los pedidos de VARIOS clientes al vendedor nuevo (ver lib/reasignarCliente) y deja una
 // fila de historial por pedido. Todos tienen que ser de la misma sucursal que el vendedor.
-// Solo Administrador (de SU sucursal) y los roles globales.
+// Solo Supervisor para arriba (de SU sucursal; los globales, de cualquiera).
 router.post('/reasignar-vendedor', async (req, res) => {
   const ctx = getRequesterContext(req);
-  if (!ctx.canManageUsers) {
-    return res.status(403).json({ error: 'Solo un Administrador puede reasignar clientes.' });
+  if (!puedeReasignar(ctx.role, ctx.isGlobalAdmin)) {
+    return res.status(403).json({ error: 'Solo un Supervisor o un rol superior puede reasignar clientes.' });
   }
   const ids: string[] = Array.isArray(req.body?.clienteIds)
     ? [...new Set<string>(req.body.clienteIds.filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()))]

@@ -22,7 +22,7 @@ import type { Vendedor } from "@/stores/datos/vendedores";
  *
  * El cliente no tiene vendedor propio: lo es de quien tiene pedidos suyos, así que esto mueve
  * todos los pedidos del vendedor. Solo a uno de su misma sucursal y de alta. Solo
- * Administrador y roles globales; la API lo vuelve a comprobar.
+ * Supervisor para arriba; la API lo vuelve a comprobar.
  */
 export const PasarClientes = ({
   vendedor,
@@ -52,7 +52,11 @@ export const PasarClientes = ({
 
   const pedidos = vendedor._count?.pedidos ?? 0;
 
-  if (!session?.isGlobalAdmin && session?.rol !== "ADMINISTRADOR") return null;
+  if (
+    !session?.isGlobalAdmin &&
+    !["SUPERVISOR", "GERENTE", "ADMINISTRADOR"].includes(session?.rol ?? "")
+  )
+    return null;
   if (pedidos === 0 || !vendedor.sucursalId) return null;
 
   const guardar = async () => {

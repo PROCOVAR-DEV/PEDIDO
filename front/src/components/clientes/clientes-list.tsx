@@ -120,7 +120,8 @@ export const ClientesList = () => {
   // pasan a otro vendedor de una vez. Se guardan los objetos, no solo los ids, porque la
   // selección sobrevive al cambio de página y el modal necesita su sucursal.
   const puedeReasignar =
-    !!session?.isGlobalAdmin || session?.rol === "ADMINISTRADOR";
+    !!session?.isGlobalAdmin ||
+    ["SUPERVISOR", "GERENTE", "ADMINISTRADOR"].includes(session?.rol ?? "");
   const [seleccionando, setSeleccionando] = useState(false);
   const [marcados, setMarcados] = useState<Map<string, Cliente>>(new Map());
   const reasignar = useDisclosure();

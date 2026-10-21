@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '../prismaClient';
 import { emitEvent } from '../lib/events';
 import { anotarHistorial } from '../lib/historialPedido';
+import { puedeReasignar } from '../lib/reasignarCliente';
 import {
   nombreComparable,
   codigoDesdeNombre,
@@ -469,12 +470,12 @@ router.delete('/:id', async (req, res) => {
 
 // POST /vendedores/:id/reasignar-clientes { vendedorId }
 // Pasa TODOS los pedidos de este vendedor (y con ellos sus clientes) a otro de la misma
-// sucursal, de una vez. Cada pedido deja su fila de historial. Solo Administrador (de su
+// sucursal, de una vez. Cada pedido deja su fila de historial. Solo Supervisor para arriba (de su
 // sucursal) y roles globales. El de origen puede estar de baja: es el caso típico.
 router.post('/:id/reasignar-clientes', async (req, res) => {
   const ctx = getRequesterContext(req);
-  if (!ctx.canManageUsers) {
-    return res.status(403).json({ error: 'Solo un Administrador puede reasignar clientes.' });
+  if (!puedeReasignar(ctx.role, ctx.isGlobalAdmin)) {
+    return res.status(403).json({ error: 'Solo un Supervisor o un rol superior puede reasignar clientes.' });
   }
   const destinoId = typeof req.body?.vendedorId === 'string' ? req.body.vendedorId.trim() : '';
   if (!destinoId) return res.status(400).json({ error: 'Falta el vendedor nuevo.' });

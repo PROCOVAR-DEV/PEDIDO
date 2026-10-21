@@ -27,3 +27,13 @@ export function planReasignacion(
 
   return { mover, yaSuyos: candidatos.length - mover.length };
 }
+
+/**
+ * Quién puede reasignar: Supervisor y todo lo de arriba (Gerente, Administrador y los roles
+ * globales). Gestor y Operador no. Es el rol de Accesos, escrito EXACTAMENTE así.
+ */
+const ROLES_QUE_REASIGNAN = new Set(['SUPERVISOR', 'GERENTE', 'ADMINISTRADOR', 'SUPER ADMIN', 'DESARROLLADOR']);
+
+export function puedeReasignar(role: string | undefined | null, esGlobal: boolean): boolean {
+  return esGlobal || ROLES_QUE_REASIGNAN.has(String(role || '').toUpperCase());
+}

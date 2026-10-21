@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { planReasignacion } from '../src/lib/reasignarCliente';
+import { planReasignacion, puedeReasignar } from '../src/lib/reasignarCliente';
 
 const p = (id: string, vendedorId: string | null) => ({ id, vendedorId, vendedorNombre: vendedorId });
 
@@ -24,4 +24,14 @@ test('si ya son todos suyos no hay nada que mover', () => {
 
   assert.equal(r.mover.length, 0);
   assert.equal(r.yaSuyos, 2);
+});
+
+test('reasignan Supervisor y todo lo de arriba; Gestor y Operador no', () => {
+  for (const r of ['SUPERVISOR', 'GERENTE', 'ADMINISTRADOR', 'SUPER ADMIN', 'DESARROLLADOR']) {
+    assert.equal(puedeReasignar(r, false), true, r);
+  }
+  for (const r of ['GESTOR', 'OPERADOR', 'ECONOMICA', 'ANALISTA', 'LOGISTICO', '', undefined]) {
+    assert.equal(puedeReasignar(r, false), false, String(r));
+  }
+  assert.equal(puedeReasignar('OPERADOR', true), true);
 });
