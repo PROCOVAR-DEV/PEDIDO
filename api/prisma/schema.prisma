@@ -302,6 +302,7 @@ model Pedido {
   completadoPor      String?
   items              PedidoItem[]
   historial          PedidoHistorial[]
+  entregasDeFactura  EntregaDeFactura[]
   copias             CopiaPortapapeles[]
   domicilioGrupos    PedidoDomicilioGrupo[]
 
@@ -770,4 +771,32 @@ model PedidoHistorial {
 
   @@index([pedidoId, at])
   @@map("OrderHistory")
+}
+
+/// En qué punto del reparto va CADA FACTURA de un pedido (desde el 23/10/2026).
+///
+/// Reparto trabaja por factura de Ventra y un pedido puede tener varias; cada una avisa por
+/// separado. Con un solo `estadoEntrega` por pedido, la segunda factura pisaba a la primera.
+/// Una fila por (pedido, factura, punto de venta): repetir el aviso no cambia nada, uno
+/// nuevo de la MISMA factura la reemplaza (salvo que su `at` sea anterior al guardado) y
+/// otra factura es otra fila. `Pedido.estadoEntrega*` pasa a derivarse de estas filas
+/// (ver `derivarEstadoDelPedido` en `lib/estadoEntrega.ts`).
+///
+/// `puntoDeVenta` NO es nulo ("" si no viene): en Postgres dos NULL no chocan en un
+/// índice único y el aviso repetido crearía filas duplicadas. Se borra con el pedido.
+model EntregaDeFactura {
+  id           String   @id @default(cuid())
+  pedidoId     String
+  pedido       Pedido   @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  factura      String
+  puntoDeVenta String   @default("")
+  estado       String
+  nota         String?
+  /// Cuándo ocurrió, según quien avisa. Es lo que decide si un aviso tardío pisa o no.
+  at           DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([pedidoId, factura, puntoDeVenta])
+  @@map("EntregaDeFactura")
 }
