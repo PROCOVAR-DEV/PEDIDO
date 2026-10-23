@@ -140,7 +140,7 @@ async function traerUna(codigo: string): Promise<{ ok: boolean; valor?: number; 
     return { ok: false, error: porQue[r.status] || `contestó ${r.status}` };
   }
 
-  const b = await r.json().catch(() => null);
+  const b: any = await r.json().catch(() => null); // @types/node 24 tipa json() como unknown; antes era any
   const v = Number(
     typeof b === 'number' ? b
       : b?.tasa_cup ?? b?.cupPorUsd ?? b?.cup_por_usd ?? b?.cup ?? b?.tasa ?? b?.rate ?? b?.valor ?? b?.data?.tasa,
