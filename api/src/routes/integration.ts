@@ -1187,7 +1187,30 @@ router.post('/orders/invoicing', async (req, res) => {
 /**
  * POST /integration/orders/status — en qué punto del reparto va cada pedido.
  *
- * Body: { pedidos: [{ pedidoId, estado, nota?, at? }] }
+ * Body: { pedidos: [{ pedidoId | folio, sucursal?, factura?, puntoDeVenta?, estado, nota?, at? }] }
+ *
+ * # Cómo se identifica el pedido
+ *
+ *   - `pedidoId` (el id interno): como siempre; si viene, manda y `folio` ni se mira.
+ *   - `folio` (sin `pedidoId`): el `orderNumber` de la nota de la factura. Se busca DENTRO
+ *     del alcance de la clave/sucursal, comparando sin importar mayúsculas, espacios ni
+ *     guiones raros. `sucursal` (id o código) sólo estrecha: si no cuadra con el alcance se
+ *     rechaza. 0 coincidencias -> «no existe aquí (folio …)»; más de una -> «folio
+ *     ambiguo». Nunca se elige uno. Con `folio`, `factura` es OBLIGATORIA.
+ *
+ * # Estado POR FACTURA
+ *
+ * Un pedido puede tener varias facturas y Reparto avisa de cada una por separado. Con
+ * `factura` (+ `puntoDeVenta` opcional) el estado se guarda en `EntregaDeFactura`, una fila
+ * por (pedido, factura, punto de venta): repetir el aviso no cambia nada; uno nuevo de la
+ * misma factura la reemplaza, salvo que su `at` sea anterior al guardado (se acusa recibo
+ * con `ignorado: 'anterior_al_guardado'` y no se pisa); otra factura es otra fila. Sin `at`
+ * vale «ahora». El `estadoEntrega` del pedido pasa a DERIVARSE de sus facturas
+ * (`derivarEstadoDelPedido`): todas `entregado` -> `entregado`; si no, el estado de la de
+ * `at` más reciente. Sin `factura` (delivery de siempre) se escribe directo en el pedido.
+ *
+ * Respuesta: `aplicados` lleva `pedidoId` (el interno), `folio`, `estado` (y `factura`);
+ * `rechazados` lleva lo que vino (`pedidoId` o `folio`, y `factura`) y el motivo.
  *
  * # Por qué no se toca `estado`
  *
