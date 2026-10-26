@@ -829,10 +829,31 @@ export function arrancarCotejoFacturacion(): void {
    * justo cuando ha pasado algo.
    */
   let ultimo = '';
+  // Lo que falló en la vuelta anterior, para escribir el fallo UNA vez y no cada treinta segundos.
+  let ultimoError = '';
+  // Una vuelta no arranca si la anterior sigue en marcha: si Ventra se pone lenta, vueltas
+  // apiladas le pedirían lo mismo varias veces a la vez.
+  let enCurso = false;
 
   const correrRapido = () => {
+    if (enCurso) return;
+    enCurso = true;
+
     cotejarUnaVez({ rapido: true })
       .then((rs) => {
+        /**
+         * Los errores POR SUCURSAL. Antes sólo se anotaba el fallo de toda la vuelta: si una
+         * sucursal fallaba y las demás no, el error quedaba dentro del resultado y no lo veía nadie,
+         * y esa sucursal se quedaba sin completar sus pedidos sin dejar rastro.
+         */
+        const errores = rs.filter((r) => r.error).map((r) => `${r.sucursal}: ${r.error}`).join(' | ');
+
+        if (errores !== ultimoError) {
+          if (errores) console.error(`[factura/rápido] fallaron sucursales: ${errores}`);
+          else console.log('[factura/rápido] las sucursales vuelven a responder');
+          ultimoError = errores;
+        }
+
         const cambiados = rs.reduce((a, r) => a + (r.error ? 0 : r.cambiado), 0);
         const nuevos = rs.reduce((a, r) => a + (r.error ? 0 : r.igual), 0);
         const ahora = `${nuevos}/${cambiados}`;
@@ -842,7 +863,10 @@ export function arrancarCotejoFacturacion(): void {
           ultimo = ahora;
         }
       })
-      .catch((e) => console.error('[factura/rápido] falló:', (e as Error).message));
+      .catch((e) => console.error('[factura/rápido] falló:', (e as Error).message))
+      .finally(() => {
+        enCurso = false;
+      });
   };
 
   // Margen al arrancar, igual que el catálogo: durante el despliegue la VPN puede no

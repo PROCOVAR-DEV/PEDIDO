@@ -2,6 +2,7 @@ import express from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../prismaClient';
 import { emitEvent } from '../lib/events';
+import { anotarEnlaces } from '../lib/historialEnlace';
 import { anotarHistorial } from '../lib/historialPedido';
 import { ESTADO_ABIERTO, puedeReasignar } from '../lib/reasignarCliente';
 import { avisarReasignacion } from '../lib/avisoReasignacion';
@@ -394,6 +395,9 @@ router.post('/', async (req, res) => {
     }
 
     await emitirVendedor(vendedor.id, 'create');
+    if (vendedor.gestorId) {
+      await anotarEnlaces([{ vendedorId: vendedor.id, vendedorNombre: vendedor.nombre, antesId: null, despuesId: vendedor.gestorId, por: requester.username, motivo: 'alta' }]);
+    }
     res.status(201).json(vendedor);
   } catch (error) {
     console.error('Error creating vendedor:', error);
@@ -702,6 +706,31 @@ router.patch('/:id/nombre', async (req, res) => {
   }
 });
 
+// GET /vendedores/:id/enlaces — a quién estuvo ligado este vendedor, del cambio más reciente al más antiguo.
+router.get('/:id/enlaces', async (req, res) => {
+  try {
+    const ctx = getRequesterContext(req);
+    if (!ctx.puedeGestionarVendedores) {
+      return res.status(403).json({ error: 'No tienes permiso para ver esto.' });
+    }
+    const v = await prisma.vendedor.findUnique({ where: { id: req.params.id }, select: { id: true, sucursalId: true, gestorId: true } });
+    if (!v) return res.status(404).json({ error: 'Vendedor no encontrado' });
+    if (!ctx.isGlobalAdmin && v.sucursalId && v.sucursalId !== ctx.sucursalId) {
+      return res.status(403).json({ error: 'Ese vendedor es de otra sucursal.' });
+    }
+    const enlaces = await prisma.vendedorEnlace.findMany({
+      where: { vendedorId: v.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    return res.json({ enlaces });
+  } catch (error) {
+    console.error('Error leyendo los enlaces del vendedor:', error);
+    return res.status(500).json({ error: 'Error al leer el historial' });
+  }
+});
+
 router.patch('/:id/gestor', async (req, res) => {
   try {
     // El Operador solo LEE esta vista (factura y copia el codigo al
@@ -776,6 +805,10 @@ router.patch('/:id/gestor', async (req, res) => {
 
       return { v, pedidos, clientes, fusionados };
     });
+
+    await anotarEnlaces([
+      { vendedorId: id, vendedorNombre: vendedor.nombre, antesId: vendedor.gestorId, despuesId: gestorId || null, por: requester.username, motivo: 'pantalla' },
+    ]);
 
     // En vivo: el vínculo cambia el vendedor y (por backfill) sus pedidos + clientes.
     // El vendedor viaja completo; los pedidos/clientes son demasiados para mandarlos

@@ -42,6 +42,7 @@ import {
 import { useCerrarAlPulsarFuera } from "@/hooks/cerrar-al-pulsar-fuera";
 import { ACCION_TARJETA } from "@/components/primitives";
 import { PasarClientes } from "./pasar-clientes";
+import { HistorialEnlace } from "./historial-enlace";
 
 // Los tipos Vendedor/Gestor viven en el store: los comparten quien los pinta y
 // quien los trae, y asi no se separan cuando cambie el api.
@@ -1095,7 +1096,9 @@ export const VendedoresList = () => {
                         <CardBody className="gap-2 items-center text-center">
                           <Icons.receipt className="size-8 text-primary" />
                           <p className="text-2xl font-bold">
-                            {vendedorStats.totalPedidos}
+                            {puedeGestionar && detalle && <HistorialEnlace vendedorId={detalle.id} />}
+
+                  {vendedorStats.totalPedidos}
                           </p>
                           <p className="text-xs text-default-500">Total</p>
                         </CardBody>

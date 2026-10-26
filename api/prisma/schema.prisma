@@ -800,3 +800,24 @@ model EntregaDeFactura {
   @@unique([pedidoId, factura, puntoDeVenta])
   @@map("EntregaDeFactura")
 }
+
+/// A QUIÉN ESTUVO LIGADO cada vendedor: cada cambio del enlace con su usuario gestor, con quién lo
+/// hizo y por qué vía. Sin esto, cuando un vendedor «no le sale a su usuario» no hay forma de saber
+/// qué tenía antes ni quién lo cambió. Sin claves foráneas a propósito: el historial tiene que
+/// sobrevivir a que se borre el vendedor o el usuario, y por eso guarda también el nombre.
+model VendedorEnlace {
+  id            String   @id @default(cuid())
+  vendedorId    String
+  vendedorNombre String?
+  gestorAntesId String?
+  gestorAntes   String?
+  gestorDespuesId String?
+  gestorDespues String?
+  por           String?
+  /// pantalla | alta | usuario_borrado | reasignar_usuario
+  motivo        String
+  createdAt     DateTime @default(now())
+
+  @@index([vendedorId, createdAt])
+  @@map("SellerLink")
+}

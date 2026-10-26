@@ -4,6 +4,7 @@ import { normalizarUsuario } from '../lib/nombreUsuario';
 import prisma from '../prismaClient';
 import { decidirBorrado } from '../lib/borradoUsuario';
 import { getRequesterContext, resolveSucursalScope } from '../lib/sucursalContext';
+import { anotarEnlaces } from '../lib/historialEnlace';
 import { emitEvent } from '../lib/events';
 import { ROLES_ENLAZABLES, backfillSucursalDeVendedor } from '../lib/gestores';
 
@@ -562,6 +563,18 @@ router.delete('/:id', async (req, res) => {
       prisma.usuario.delete({ where: { id } }),
     ]);
 
+    // Los que quedaron sin gestor: queda dicho de quién eran y quién borró al usuario.
+    await anotarEnlaces(
+      decision.aLiberar.map((v) => ({
+        vendedorId: v.id,
+        vendedorNombre: (v as { nombre?: string }).nombre ?? null,
+        antesId: id,
+        despuesId: null,
+        por: getRequesterContext(req).username,
+        motivo: 'usuario_borrado' as const,
+      })),
+    );
+
     emitEvent('usuario', { sucursalId: existingUser.sucursalId, id, accion: 'delete' });
     if (vendedoresACargo.length) {
       emitEvent('vendedor', { sucursalId: existingUser.sucursalId, accion: 'bulk' });
@@ -705,6 +718,16 @@ router.post('/:id/reasignar-vendedores', async (req, res) => {
         total.fusionados += bf.fusionados;
       }
     });
+
+    await anotarEnlaces(
+      vendedores.map((v) => ({
+        vendedorId: v.id,
+        antesId: id,
+        despuesId: destino.id,
+        por: getRequesterContext(req).username,
+        motivo: 'reasignar_usuario' as const,
+      })),
+    );
 
     emitEvent('vendedor', { sucursalId: destino.sucursalId, accion: 'reasignar' });
     if (total.pedidos > 0) emitEvent('pedido', { sucursalId: destino.sucursalId, accion: 'backfill' });
