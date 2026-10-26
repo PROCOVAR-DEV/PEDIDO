@@ -50,7 +50,7 @@
  */
 import { camposParaCompletar, conservaSuFactura, POR_LA_FACTURA } from './autocompletado';
 import { inicioDeVentanaDePedidos } from './ventanaDePedidos';
-import { crearFilaExclusiva } from './filaExclusiva';
+import { unoALaVez } from './unoALaVez';
 import { anotarHistorial } from './historialPedido';
 import { cajeroDeLasFacturas } from './cajeroVentra';
 import prisma from '../prismaClient';
@@ -105,12 +105,6 @@ const TOPE_PREFIJOS = Number(process.env.FACTURACION_TOPE_PREFIJOS || 12);
  * 5.000 de siempre se quedan cortos y las facturas del final no se ven.
  */
 const TOPE_LINEAS_COMPLETA = Number(process.env.FACTURACION_TOPE_LINEAS || 20000);
-
-/**
- * La fila de los trabajos PESADOS de facturación: la pasada completa y el repaso del mes. Corren de
- * uno en uno, nunca a la vez. El carril rápido va por fuera y sigue su reloj de 30 segundos.
- */
-export const filaPesada = crearFilaExclusiva();
 
 const soloFecha = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -773,11 +767,20 @@ export function arrancarCotejoFacturacion(): void {
     return;
   }
 
+  // La pasada completa tiene su propia cola de uno: si tarda más que su reloj, no se amontonan.
+  const lanzarCompleta = unoALaVez(() => cotejarUnaVez({}));
+
   const correr = () => {
     const arrancoEn = Date.now();
 
-    filaPesada(() => cotejarUnaVez({}))
+    lanzarCompleta()
       .then((rs) => {
+        if (rs === null) {
+          console.log('[factura] la pasada anterior sigue en marcha: esta se salta, no se encola');
+
+          return;
+        }
+
         /**
          * El parte de la pasada, a Redis, para la pantalla del sincronizador.
          *
