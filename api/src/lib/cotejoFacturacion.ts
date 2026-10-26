@@ -85,7 +85,14 @@ const CADA_MS = Number(process.env.FACTURACION_CADA_MS || 10 * 60 * 1000);
  * A Ventra se le sigue preguntando sólo por lo de HOY (o por los folios que esperan), así
  * que esto no añade ni una vuelta más por la VPN: es una consulta a nuestra base.
  */
-const RAPIDO_DIAS = Number(process.env.FACTURACION_RAPIDO_DIAS || DIAS);
+/**
+ * Siete días y no tres (26/10/2026): un pedido del jueves facturado el lunes por la tarde —o
+ * cualquiera que espere más de un fin de semana— se quedaba esperando a la pasada completa, y
+ * con ella tampoco entraba. Ampliar ESTO no tiene coste: el carril rápido sólo mira lo que
+ * espera factura, sólo pregunta por las facturas de hoy y nunca marca «sin factura». Lo más
+ * viejo lo recoge el repaso del mes a las 18:30.
+ */
+const RAPIDO_DIAS = Number(process.env.FACTURACION_RAPIDO_DIAS || 7);
 /**
  * Cuántos folios se le piden a Ventra uno a uno antes de preferir el día entero.
  *
