@@ -11,7 +11,7 @@ import { emitEvent } from './lib/events';
 import { processBulkImport } from './routes/orders';
 import { processParrandaSync } from './lib/parranda';
 import { arrancarSondeoVentra } from './lib/sondeoVentra';
-import { arrancarCotejoFacturacion, cotejarUnaVez } from './lib/cotejoFacturacion';
+import { arrancarCotejoFacturacion, cotejarUnaVez, filaPesada } from './lib/cotejoFacturacion';
 import { tramosSemanales } from './lib/tramosSemanales';
 import { arrancarTelefonos } from './lib/telefonoCliente';
 import { arrancarTasaCambio } from './lib/tasaCambio';
@@ -177,11 +177,14 @@ async function procesarRepaso() {
     if (!primera) await new Promise((r) => setTimeout(r, PAUSA_ENTRE_SEMANAS_MS));
     primera = false;
 
-    const rs = await cotejarUnaVez({
-      desde: ini,
-      hasta: fin,
-      facturasHasta: new Date(Math.min(ahora.getTime(), fin.getTime() + MARGEN_FACTURAS)),
-    });
+    // Por la fila de los pesados: si justo corre la pasada completa, esta semana espera su turno.
+    const rs = await filaPesada(() =>
+      cotejarUnaVez({
+        desde: ini,
+        hasta: fin,
+        facturasHasta: new Date(Math.min(ahora.getTime(), fin.getTime() + MARGEN_FACTURAS)),
+      }),
+    );
     const ok = rs.filter((r) => !r.error);
     const suma = (f: (r: (typeof ok)[number]) => number) => ok.reduce((a, r) => a + f(r), 0);
     const mal = rs.filter((r) => r.error);
