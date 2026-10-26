@@ -12,6 +12,7 @@ import { processBulkImport } from './routes/orders';
 import { processParrandaSync } from './lib/parranda';
 import { arrancarSondeoVentra } from './lib/sondeoVentra';
 import { arrancarCotejoFacturacion, cotejarUnaVez } from './lib/cotejoFacturacion';
+import { tramosSemanales } from './lib/tramosSemanales';
 import { arrancarTelefonos } from './lib/telefonoCliente';
 import { arrancarTasaCambio } from './lib/tasaCambio';
 
@@ -162,28 +163,44 @@ async function main() {
  * lo que a esa hora no tiene factura es que de verdad no la tiene.
  */
 async function procesarRepaso() {
-  const hasta = new Date();
-  const desde = new Date(hasta.getFullYear(), hasta.getMonth(), 1);
+  const ahora = new Date();
+  const desde = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), 1));
+  // Facturas de unos días MÁS ALLÁ del fin de cada semana: el pedido del viernes se factura el lunes.
+  const MARGEN_FACTURAS = 7 * 86400000;
+  const PAUSA_ENTRE_SEMANAS_MS = Number(process.env.REPASO_PAUSA_MS || 60_000);
 
-  console.log(`[repaso] mes desde ${desde.toISOString().slice(0, 10)}`);
+  console.log(`[repaso] mes desde ${desde.toISOString().slice(0, 10)}, por semanas`);
 
-  const rs = await cotejarUnaVez({ desde });
-  const ok = rs.filter((r) => !r.error);
-  const suma = (f: (r: (typeof ok)[number]) => number) => ok.reduce((a, r) => a + f(r), 0);
-  const mal = rs.filter((r) => r.error);
+  let primera = true;
+  for (const [ini, fin] of tramosSemanales(desde, ahora)) {
+    // Una semana cada vez, con pausa: Ventra no se queda ocupada con el mes entero de seguido.
+    if (!primera) await new Promise((r) => setTimeout(r, PAUSA_ENTRE_SEMANAS_MS));
+    primera = false;
 
-  console.log(
-    `[repaso] ${suma((r) => r.cotejados)} pedidos del mes · ` +
-      `${suma((r) => r.igual)} igual, ${suma((r) => r.cambiado)} cambiados, ` +
-      `${suma((r) => r.sinFactura)} sin factura · ${suma((r) => r.corregidos)} corregidos` +
-      (mal.length ? ` · fallaron ${mal.map((r) => r.sucursal).join(', ')}` : ''),
-  );
+    const rs = await cotejarUnaVez({
+      desde: ini,
+      hasta: fin,
+      facturasHasta: new Date(Math.min(ahora.getTime(), fin.getTime() + MARGEN_FACTURAS)),
+    });
+    const ok = rs.filter((r) => !r.error);
+    const suma = (f: (r: (typeof ok)[number]) => number) => ok.reduce((a, r) => a + f(r), 0);
+    const mal = rs.filter((r) => r.error);
+
+    console.log(
+      `[repaso] semana del ${ini.toISOString().slice(0, 10)}: ${suma((r) => r.cotejados)} pedidos · ` +
+        `${suma((r) => r.igual)} igual, ${suma((r) => r.cambiado)} cambiados, ` +
+        `${suma((r) => r.sinFactura)} sin factura · ${suma((r) => r.corregidos)} corregidos` +
+        (mal.length ? ` · fallaron ${mal.map((r) => r.sucursal).join(', ')}` : ''),
+    );
+  }
 }
 
 /**
- * Programa el repaso del mes: cada 3 horas, a los :20 (ver `cron` abajo). Antes era una vez al día
- * a las 18:30, después de cerrar; ya no hace falta esperar al cierre porque un pedido sin factura
- * se queda «en proceso» y se vuelve a mirar en la pasada siguiente.
+ * Programa el repaso del mes: dos veces al día (07:20 y 19:20, hora de Cuba), partido en semanas.
+ *
+ * Tres trabajos miran las facturas: el carril rápido (cada 30 s, lo nuevo), la pasada completa (cada
+ * 3 horas, siete días) y éste, que repasa el mes entero. Va aparte de la pasada completa a propósito:
+ * es lo más pesado y por eso va partido por semanas.
  *
  * La hora es de Cuba. Con el servidor en UTC, «las seis» serían las dos de la tarde, con
  * las sucursales facturando todavía — que es justo lo que este repaso no puede hacer.
@@ -192,11 +209,9 @@ async function procesarRepaso() {
  * el cron, así que cambiar la hora sin limpiar deja los DOS y se repasaría dos veces.
  */
 async function programarRepasoFacturas(rq: NonNullable<ReturnType<typeof repasoFacturasQueue>>) {
-  // Cada 3 horas, 8 veces al día (decidido por Jose el 26/10/2026): es el que arregla los
-  // atrasados del MES; el carril rápido ve lo nuevo y la pasada de 3 días lo reciente. Antes era
-  // una vez al día a las 18:30 y un pedido corregido tarde esperaba hasta ocho horas más. Los :20
-  // evitan el sync de Parranda (:00) y la pasada de 3 días (:51).
-  const cron = process.env.REPASO_FACTURAS_CRON || '20 */3 * * *';
+  // DOS veces al día (decidido por Jose el 26/10/2026), a las 07:20 y a las 19:20 de Cuba: una antes de
+  // abrir y otra después de cerrar. Cada una repasa el mes por semanas, con pausa entre ellas.
+  const cron = process.env.REPASO_FACTURAS_CRON || '20 7,19 * * *';
   const tz = process.env.REPASO_FACTURAS_TZ || 'America/Havana';
 
   try {

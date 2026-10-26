@@ -70,9 +70,11 @@ import { guardarUltimaPasada } from './cotejoEstado';
 import { avisarPedidoCambiado } from './webhook';
 
 /** Cuántos días atrás se repasa. La facturación vieja ya no se mueve. */
-const DIAS = Number(process.env.FACTURACION_DIAS || 3);
+// Siete días (decidido por Jose el 26/10/2026): la pasada completa es la que recoge lo que el carril
+// rápido (tres días) no alcanzó, y los fines de semana largos se pasan de tres.
+const DIAS = Number(process.env.FACTURACION_DIAS || 7);
 /** Cada cuánto. La facturación del día se mueve todo el rato. */
-const CADA_MS = Number(process.env.FACTURACION_CADA_MS || 10 * 60 * 1000);
+const CADA_MS = Number(process.env.FACTURACION_CADA_MS || 3 * 60 * 60 * 1000);
 /**
  * Cuántos días de PEDIDOS mira el carril rápido.
  *
@@ -85,14 +87,8 @@ const CADA_MS = Number(process.env.FACTURACION_CADA_MS || 10 * 60 * 1000);
  * A Ventra se le sigue preguntando sólo por lo de HOY (o por los folios que esperan), así
  * que esto no añade ni una vuelta más por la VPN: es una consulta a nuestra base.
  */
-/**
- * Siete días y no tres (26/10/2026): un pedido del jueves facturado el lunes por la tarde —o
- * cualquiera que espere más de un fin de semana— se quedaba esperando a la pasada completa, y
- * con ella tampoco entraba. Ampliar ESTO no tiene coste: el carril rápido sólo mira lo que
- * espera factura, sólo pregunta por las facturas de hoy y nunca marca «sin factura». Lo más
- * viejo lo recoge el repaso del mes a las 18:30.
- */
-const RAPIDO_DIAS = Number(process.env.FACTURACION_RAPIDO_DIAS || 7);
+/** Tres días de pedidos, para el carril rápido (el que ve lo nuevo cada 30 s). */
+const RAPIDO_DIAS = Number(process.env.FACTURACION_RAPIDO_DIAS || 3);
 /**
  * Cuántos folios se le piden a Ventra uno a uno antes de preferir el día entero.
  *
@@ -101,6 +97,13 @@ const RAPIDO_DIAS = Number(process.env.FACTURACION_RAPIDO_DIAS || 7);
  * idas y vueltas cada treinta segundos.
  */
 const TOPE_PREFIJOS = Number(process.env.FACTURACION_TOPE_PREFIJOS || 12);
+
+/**
+ * Cuántas líneas se le piden a Ventra en las pasadas largas. Ventra no pagina y corta en el tope SIN
+ * decirlo: con siete días de una sucursal grande (Sancti Spíritus pasa de 170 facturas al día), los
+ * 5.000 de siempre se quedan cortos y las facturas del final no se ven.
+ */
+const TOPE_LINEAS_COMPLETA = Number(process.env.FACTURACION_TOPE_LINEAS || 20000);
 
 const soloFecha = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -152,10 +155,16 @@ export interface ResultadoCotejo {
  *                los alcanza.
  */
 export async function cotejarUnaVez(
-  { rapido = false, desde: desdeFijo, hasta: hastaFijo }: {
+  { rapido = false, desde: desdeFijo, hasta: hastaFijo, facturasHasta }: {
     rapido?: boolean;
     desde?: Date;
     hasta?: Date;
+    /**
+     * Hasta qué día de FACTURAS se le pide a Ventra, si es más allá del fin de los pedidos. En el
+     * repaso por semanas, un pedido del viernes se factura el lunes —ya en la semana siguiente—: sin
+     * mirar unos días de factura hacia delante, saldría «sin factura» sin serlo.
+     */
+    facturasHasta?: Date;
   } = {},
 ): Promise<ResultadoCotejo[]> {
   const hasta = hastaFijo ?? new Date();
@@ -246,9 +255,9 @@ export async function cotejarUnaVez(
         ventas =
           prefijos.length && prefijos.length <= TOPE_PREFIJOS
             ? await ventasPorPrefijoDeFolio(base.database, prefijos)
-            : await ventasDeSucursal(base.database, soloFecha(desde), soloFecha(hasta));
+            : await ventasDeSucursal(base.database, soloFecha(desde), soloFecha(facturasHasta ?? hasta), TOPE_LINEAS_COMPLETA);
       } else {
-        ventas = await ventasDeSucursal(base.database, soloFecha(desde), soloFecha(hasta));
+        ventas = await ventasDeSucursal(base.database, soloFecha(desde), soloFecha(facturasHasta ?? hasta), TOPE_LINEAS_COMPLETA);
       }
 
       r.lineas = ventas.length;
