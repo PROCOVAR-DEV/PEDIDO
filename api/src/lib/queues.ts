@@ -55,6 +55,19 @@ export function parrandaQueue(): Queue.Queue | null {
  * repetible está **deduplicado por Redis**, de modo que el día que haya dos réplicas del
  * worker no se repasará el mes dos veces a la vez.
  */
+/**
+ * Las colas de los otros dos carriles de facturación: el RÁPIDO (cada 30 s) y el COMPLETO (cada 3 h).
+ * Cada uno la suya, con un solo trabajo a la vez (ver `carrilEnCola`).
+ */
+export const QUEUE_FACTURA_RAPIDO = `${PREFIX}:factura-rapido`;
+export const QUEUE_FACTURA_COMPLETA = `${PREFIX}:factura-completa`;
+export function facturaRapidoQueue(): Queue.Queue | null {
+  return makeQueue(QUEUE_FACTURA_RAPIDO);
+}
+export function facturaCompletaQueue(): Queue.Queue | null {
+  return makeQueue(QUEUE_FACTURA_COMPLETA);
+}
+
 export const QUEUE_REPASO_FACTURAS = `${PREFIX}:repaso-facturas`;
 export function repasoFacturasQueue(): Queue.Queue | null {
   return makeQueue(QUEUE_REPASO_FACTURAS);

@@ -51,6 +51,8 @@
 import { camposParaCompletar, conservaSuFactura, POR_LA_FACTURA } from './autocompletado';
 import { inicioDeVentanaDePedidos } from './ventanaDePedidos';
 import { unoALaVez } from './unoALaVez';
+import { arrancarCarril } from './carrilEnCola';
+import { facturaCompletaQueue, facturaRapidoQueue } from './queues';
 import { anotarHistorial } from './historialPedido';
 import { cajeroDeLasFacturas } from './cajeroVentra';
 import prisma from '../prismaClient';
@@ -773,7 +775,7 @@ export function arrancarCotejoFacturacion(): void {
   const correr = () => {
     const arrancoEn = Date.now();
 
-    lanzarCompleta()
+    return lanzarCompleta()
       .then((rs) => {
         if (rs === null) {
           console.log('[factura] la pasada anterior sigue en marcha: esta se salta, no se encola');
@@ -863,10 +865,10 @@ export function arrancarCotejoFacturacion(): void {
   let enCurso = false;
 
   const correrRapido = () => {
-    if (enCurso) return;
+    if (enCurso) return Promise.resolve();
     enCurso = true;
 
-    cotejarUnaVez({ rapido: true })
+    return cotejarUnaVez({ rapido: true })
       .then((rs) => {
         /**
          * Los errores POR SUCURSAL. Antes sólo se anotaba el fallo de toda la vuelta: si una
@@ -896,14 +898,27 @@ export function arrancarCotejoFacturacion(): void {
       });
   };
 
-  // Margen al arrancar, igual que el catálogo: durante el despliegue la VPN puede no
-  // estar lista y un fallo en el primer segundo no dice nada.
-  setTimeout(correr, 90_000);
-  setInterval(correr, CADA_MS);
-  // El rápido arranca desfasado, para no coincidir con la pasada completa y pedirle a
-  // Ventra dos cosas a la vez.
-  setTimeout(correrRapido, 120_000);
-  setInterval(correrRapido, RAPIDO_MS);
+  /**
+   * Cada carril, en SU cola de Redis y con un solo trabajo a la vez: el siguiente se encola cuando el
+   * actual acaba, no por reloj. Sin Redis se vuelve a los relojes de siempre (con su guardia), para
+   * que la facturación no dependa de él.
+   *
+   * Margen al arrancar, igual que el catálogo: durante el despliegue la VPN puede no estar lista. El
+   * rápido arranca desfasado, para no coincidir con la pasada completa y pedirle a Ventra dos cosas a
+   * la vez.
+   */
+  const qCompleta = facturaCompletaQueue();
+  const qRapido = facturaRapidoQueue();
+
+  if (qCompleta && qRapido) {
+    void arrancarCarril(qCompleta, { nombre: 'factura', cadaMs: CADA_MS, primeraEnMs: 90_000, trabajo: correr });
+    void arrancarCarril(qRapido, { nombre: 'factura/rápido', cadaMs: RAPIDO_MS, primeraEnMs: 120_000, trabajo: correrRapido });
+  } else {
+    setTimeout(correr, 90_000);
+    setInterval(correr, CADA_MS);
+    setTimeout(correrRapido, 120_000);
+    setInterval(correrRapido, RAPIDO_MS);
+  }
   console.log(
     `[factura] cotejo contra Ventra cada ${(CADA_MS / 60000).toFixed(0)} min · ` +
       `carril rápido (${RAPIDO_DIAS} días de pedidos, facturas de hoy) cada ${(RAPIDO_MS / 1000).toFixed(0)} s`,
