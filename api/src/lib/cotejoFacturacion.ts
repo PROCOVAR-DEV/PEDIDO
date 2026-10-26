@@ -49,6 +49,7 @@
  * trabaja sin conexión. El cotejo tiene que ocurrir del lado que siempre está en línea.
  */
 import { camposParaCompletar, conservaSuFactura, POR_LA_FACTURA } from './autocompletado';
+import { inicioDeVentanaDePedidos } from './ventanaDePedidos';
 import { anotarHistorial } from './historialPedido';
 import { cajeroDeLasFacturas } from './cajeroVentra';
 import prisma from '../prismaClient';
@@ -165,7 +166,7 @@ export async function cotejarUnaVez(
    * factura no la veía nadie hasta la pasada completa.
    */
   const desdePedidos =
-    desdeFijo ?? (rapido ? new Date(hasta.getTime() - RAPIDO_DIAS * 86400000) : desde);
+    desdeFijo ?? inicioDeVentanaDePedidos(hasta, rapido ? RAPIDO_DIAS : DIAS);
   const sucursales = await prisma.sucursal.findMany({ select: { id: true, nombre: true, codigo: true } });
   const bases = await databases();
   const salida: ResultadoCotejo[] = [];
