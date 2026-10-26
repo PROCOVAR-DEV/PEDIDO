@@ -181,11 +181,9 @@ async function procesarRepaso() {
 }
 
 /**
- * Programa el repaso para todos los días después de cerrar.
- *
- * A las 18:30 y no a las 18:00 a propósito: a las seis en punto ya corre el sync de
- * clientes de Parranda, y las dos cosas juntas son diez consultas por la VPN peleándose.
- * Media hora después, el sync ya terminó y las sucursales llevan un rato cerradas.
+ * Programa el repaso del mes: cada 3 horas, a los :20 (ver `cron` abajo). Antes era una vez al día
+ * a las 18:30, después de cerrar; ya no hace falta esperar al cierre porque un pedido sin factura
+ * se queda «en proceso» y se vuelve a mirar en la pasada siguiente.
  *
  * La hora es de Cuba. Con el servidor en UTC, «las seis» serían las dos de la tarde, con
  * las sucursales facturando todavía — que es justo lo que este repaso no puede hacer.
@@ -194,7 +192,11 @@ async function procesarRepaso() {
  * el cron, así que cambiar la hora sin limpiar deja los DOS y se repasaría dos veces.
  */
 async function programarRepasoFacturas(rq: NonNullable<ReturnType<typeof repasoFacturasQueue>>) {
-  const cron = process.env.REPASO_FACTURAS_CRON || '30 18 * * *';
+  // Cada 3 horas, 8 veces al día (decidido por Jose el 26/10/2026): es el que arregla los
+  // atrasados del MES; el carril rápido ve lo nuevo y la pasada de 3 días lo reciente. Antes era
+  // una vez al día a las 18:30 y un pedido corregido tarde esperaba hasta ocho horas más. Los :20
+  // evitan el sync de Parranda (:00) y la pasada de 3 días (:51).
+  const cron = process.env.REPASO_FACTURAS_CRON || '20 */3 * * *';
   const tz = process.env.REPASO_FACTURAS_TZ || 'America/Havana';
 
   try {
