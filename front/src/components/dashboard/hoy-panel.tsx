@@ -3,6 +3,7 @@ import type { ResumenHoy } from "./use-hoy";
 
 import { Button, Card, CardBody, Link, Skeleton } from "@heroui/react";
 
+import Icons from "@/components/icons/iconify";
 import { cn } from "@/lib/utils";
 
 /** «hace 4 minutos», como en la pantalla de Facturación. */
@@ -76,12 +77,21 @@ const F_SIN_COMPLETAR = {
 // Todo lo que no tiene factura, esté como esté: «sin_factura» más «sin_cotejar» (nulo).
 const F_PENDIENTES = { factura: "sin_factura,sin_cotejar" };
 
-const ENLACE_FILA =
-  "text-lg font-medium tabular-nums outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-focus";
+// Enlace estirado: el enlace principal de una tarjeta lleva un ::after que cubre TODA la
+// tarjeta (que es `relative`), así que se puede pulsar en cualquier punto. HeroUI pone
+// `relative` a sus enlaces: por eso este va `static` (también en línea, por si el fusionado
+// de clases no lo resolviera), para que el ::after se mida contra la tarjeta y no contra él.
+const ESTIRADO =
+  "static after:absolute after:inset-0 outline-none focus-visible:after:ring-2 focus-visible:after:ring-focus";
+const SIN_POSICION = { position: "static" } as const;
+// Los enlaces pequeños de dentro de una tarjeta estirada van por encima de ella.
+const ENCIMA = "relative z-10";
+
+const FOCO_FILA = "outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
 /**
  * Una línea del resumen: la etiqueta a la izquierda, la cifra a la derecha, misma línea
- * base. Con `href`, toda la línea es el enlace (la cifra lo lleva y se estira).
+ * base. Con `href`, la FILA ENTERA es el enlace (etiqueta, cifra y todo su alto).
  */
 function Fila({
   etiqueta,
@@ -98,28 +108,42 @@ function Fila({
   href?: string;
   aria?: string;
 }) {
+  const dentro = (
+    <>
+      <span className="whitespace-nowrap text-sm text-default-600">
+        {etiqueta}
+      </span>
+      {cargando ? (
+        <Skeleton className="rounded">
+          <span className="block h-5 w-8" />
+        </Skeleton>
+      ) : (
+        <span className={cn("text-lg font-medium tabular-nums", TONOS[tono])}>
+          {valor}
+        </span>
+      )}
+    </>
+  );
+  const caja =
+    "flex w-full items-baseline justify-between gap-3 rounded-md px-2 py-2.5";
+
   return (
-    <div className="relative flex items-baseline justify-between gap-3 border-b border-divider py-2 hover:bg-default-50">
-      <dt className="text-sm text-default-600">{etiqueta}</dt>
-      <dd>
-        {cargando ? (
-          <Skeleton className="rounded">
-            <span className="block h-5 w-8" />
-          </Skeleton>
-        ) : href ? (
-          <Link
-            aria-label={aria ?? `${etiqueta}: ${valor}. Ver los pedidos`}
-            className={cn(ENLACE_FILA, TONOS[tono])}
-            href={href}
-          >
-            {valor}
-          </Link>
-        ) : (
-          <span className={cn("text-lg font-medium tabular-nums", TONOS[tono])}>
-            {valor}
-          </span>
-        )}
-      </dd>
+    <div className="border-b border-divider" role="listitem">
+      {href && !cargando ? (
+        <Link
+          aria-label={aria ?? `${etiqueta}: ${valor}. Ver la lista`}
+          className={cn(
+            caja,
+            "text-foreground hover:bg-default-100",
+            FOCO_FILA,
+          )}
+          href={href}
+        >
+          {dentro}
+        </Link>
+      ) : (
+        <div className={caja}>{dentro}</div>
+      )}
     </div>
   );
 }
@@ -132,8 +156,120 @@ export interface Totales {
 }
 
 /**
- * AYER: una notificación, no un número más. Si quedaron pedidos sin factura, el bloque
- * avisa (tono suave) y lleva a verlos; si todo está facturado, se queda discreto.
+ * Los cuatro totales de pedidos. `ancho`: en fila, de lado a lado (roles sin resumen
+ * diario); si no, en la columna del resumen, donde es lo primero que se esconde en
+ * pantallas bajas. Cada fila lleva a la lista con su estado y el año entero (los totales
+ * son por AÑO); `incluirArchivados` porque los completados y expirados viejos están
+ * archivados y, sin él, la lista enseñaría menos de lo que dice la cifra.
+ */
+function BloqueTotales({
+  titulo,
+  anio,
+  totales,
+  cargandoTotales,
+  errorTotales,
+  onReintentar,
+  ancho = false,
+  ocultableEnBajo = false,
+}: {
+  titulo: string;
+  anio?: number | null;
+  totales: Totales | null;
+  cargandoTotales: boolean;
+  errorTotales: string | null;
+  onReintentar: () => void;
+  ancho?: boolean;
+  ocultableEnBajo?: boolean;
+}) {
+  const lista = (estado?: string) =>
+    `/panel/panel-pedidos?${new URLSearchParams({
+      ...(anio
+        ? { fechaDesde: `${anio}-01-01`, fechaHasta: `${anio}-12-31` }
+        : {}),
+      incluirArchivados: "1",
+      ...(estado ? { estado } : {}),
+    })}`;
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-1",
+        ancho && "lg:flex-row lg:items-baseline lg:gap-8",
+        ocultableEnBajo && "[@media(max-height:820px)]:hidden",
+      )}
+    >
+      <h2 className="shrink-0 text-base font-semibold">{titulo}</h2>
+      {errorTotales && !totales ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-default-600">
+          No se pudieron cargar los totales. Vuelve a intentarlo.
+          <Button size="sm" variant="flat" onPress={onReintentar}>
+            Reintentar
+          </Button>
+        </p>
+      ) : (
+        <div
+          className={cn(
+            "grid grid-cols-2 gap-x-6",
+            ancho && "min-w-0 flex-1 lg:grid-cols-4",
+          )}
+          role="list"
+        >
+          <Fila
+            aria={`Total de pedidos: ${totales?.total ?? 0}. Ver la lista`}
+            cargando={cargandoTotales}
+            etiqueta="Total"
+            href={lista()}
+            valor={totales?.total ?? 0}
+          />
+          <Fila
+            aria={`Pedidos completados: ${totales?.completados ?? 0}. Ver la lista`}
+            cargando={cargandoTotales}
+            etiqueta="Completados"
+            href={lista("completada")}
+            tono="ok"
+            valor={totales?.completados ?? 0}
+          />
+          <Fila
+            aria={`Pedidos en proceso: ${totales?.enProceso ?? 0}. Ver la lista`}
+            cargando={cargandoTotales}
+            etiqueta="En proceso"
+            href={lista("en_proceso")}
+            tono="aviso"
+            valor={totales?.enProceso ?? 0}
+          />
+          <Fila
+            aria={`Pedidos expirados: ${totales?.expirados ?? 0}. Ver la lista`}
+            cargando={cargandoTotales}
+            etiqueta="Expirados"
+            href={lista("expirada")}
+            valor={totales?.expirados ?? 0}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Los totales como franja de ancho completo, para los roles que no tienen resumen diario. */
+export function FranjaTotales(props: {
+  titulo: string;
+  anio?: number | null;
+  totales: Totales | null;
+  cargandoTotales: boolean;
+  errorTotales: string | null;
+  onReintentar: () => void;
+}) {
+  return (
+    <section aria-label={props.titulo}>
+      <BloqueTotales {...props} ancho />
+    </section>
+  );
+}
+
+/**
+ * AYER: una notificación, no un número más. Si quedaron pedidos sin factura, la tarjeta
+ * avisa (tono suave) y se puede pulsar entera para ir a verlos; si todo está facturado,
+ * se queda discreta y sin enlace.
  */
 export function Ayer({
   dia,
@@ -153,16 +289,12 @@ export function Ayer({
   const conFactura = (t?.facturado ?? 0) + (t?.cambiado ?? 0);
   const pendientes = t ? t.total - conFactura : 0;
   const fecha = fechaLarga(dia);
-  const marco = "rounded-lg border px-3 py-2 text-sm";
+  const caja =
+    "relative flex items-center gap-3 rounded-xl border p-4 text-sm transition-colors motion-reduce:transition-none";
 
   if (error && !resumen) {
     return (
-      <p
-        className={cn(
-          marco,
-          "flex flex-wrap items-center gap-2 border-divider text-default-600",
-        )}
-      >
+      <p className={cn(caja, "flex-wrap border-divider text-default-600")}>
         No se pudo cargar lo de ayer. Vuelve a intentarlo.
         <Button size="sm" variant="flat" onPress={onReintentar}>
           Reintentar
@@ -172,8 +304,8 @@ export function Ayer({
   }
   if (cargando && !resumen) {
     return (
-      <Skeleton className="rounded-lg">
-        <div className="h-14" />
+      <Skeleton className="rounded-xl">
+        <div className="h-[72px]" />
       </Skeleton>
     );
   }
@@ -181,159 +313,122 @@ export function Ayer({
 
   if (t.total === 0) {
     return (
-      <p className={cn(marco, "border-divider text-default-500")}>
+      <p className={cn(caja, "border-divider text-default-500")}>
         {fecha}: ayer no hubo pedidos.
       </p>
     );
   }
 
+  // Segunda línea: la fecha y dos enlaces pequeños, por encima del enlace estirado.
   const detalle = (
-    <span className="text-xs text-default-500 [@media(max-height:820px)]:hidden">
-      {fecha}:{" "}
+    <p className="text-xs text-default-500 [@media(max-height:820px)]:hidden">
+      {fecha} ·{" "}
       <Link
-        aria-label={`${t.total} pedidos de ayer. Ver los pedidos`}
-        className="text-xs"
+        aria-label={`${t.total} pedidos de ayer. Ver la lista`}
+        className={cn("text-xs", ENCIMA)}
         href={enlaceLista(dia)}
       >
         {t.total} pedidos
       </Link>
-      ,{" "}
-      <Link
-        aria-label={`${conFactura} pedidos de ayer con factura. Ver los pedidos`}
-        className="text-xs"
-        href={enlaceLista(dia, F_CON_FACTURA)}
-      >
-        {conFactura} con factura
-      </Link>
-      {t.sin_completar > 0 && `, ${t.sin_completar} sin completar`}
+      {pendientes > 0 && (
+        <>
+          {" "}
+          ·{" "}
+          <Link
+            aria-label={`${conFactura} pedidos de ayer con factura. Ver la lista`}
+            className={cn("text-xs", ENCIMA)}
+            href={enlaceLista(dia, F_CON_FACTURA)}
+          >
+            {conFactura} con factura
+          </Link>
+        </>
+      )}
+    </p>
+  );
+
+  const icono = (tono: string, Icono: React.ElementType) => (
+    <span
+      aria-hidden
+      className={cn(
+        "grid size-8 shrink-0 place-items-center rounded-full",
+        tono,
+      )}
+    >
+      <Icono className="size-4" />
     </span>
   );
 
   if (pendientes === 0) {
     return (
-      <div className={cn(marco, "flex flex-col border-divider")} role="status">
-        <span className="font-medium">Ayer: todo facturado</span>
-        {detalle}
+      <div className={cn(caja, "border-divider")} role="status">
+        {icono("bg-success-100 text-success-700", Icons.check)}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">Ayer: todo facturado</p>
+          <p className="text-xs text-default-500 [@media(max-height:820px)]:hidden">
+            {fecha} ·{" "}
+            <Link
+              aria-label={`${t.total} pedidos de ayer. Ver la lista`}
+              className="text-xs"
+              href={enlaceLista(dia)}
+            >
+              {t.total} pedidos
+            </Link>
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div
-      className={cn(marco, "flex flex-col border-warning-200 bg-warning-50/40")}
+      className={cn(
+        caja,
+        "border-warning-200 bg-warning-50/40 hover:bg-warning-50/70",
+      )}
       role="status"
     >
-      <span className="flex flex-wrap items-baseline justify-between gap-x-3">
-        <span className="font-medium">
+      {icono("bg-warning-100 text-warning-700", Icons.calendar)}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">
           {pendientes === 1
             ? "Ayer quedó 1 pedido sin factura"
             : `Ayer quedaron ${pendientes} pedidos sin factura`}
-        </span>
-        <Link
-          aria-label={`Ver los ${pendientes} pedidos de ayer sin factura`}
-          className="text-sm font-medium"
-          href={enlaceLista(dia, F_PENDIENTES)}
-        >
-          Ver {pendientes === 1 ? "el pedido" : `los ${pendientes}`}
-        </Link>
-      </span>
-      {detalle}
-    </div>
-  );
-}
-
-/**
- * Los cuatro totales de pedidos. `ancho`: en fila, de lado a lado (roles sin resumen
- * diario); si no, en la columna del resumen, donde es lo primero que se esconde en
- * pantallas bajas.
- */
-function BloqueTotales({
-  titulo,
-  totales,
-  cargandoTotales,
-  errorTotales,
-  onReintentar,
-  ancho = false,
-  ocultableEnBajo = false,
-}: {
-  titulo: string;
-  totales: Totales | null;
-  cargandoTotales: boolean;
-  errorTotales: string | null;
-  onReintentar: () => void;
-  ancho?: boolean;
-  ocultableEnBajo?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-1",
-        ancho && "lg:flex-row lg:items-baseline lg:gap-8",
-        ocultableEnBajo && "[@media(max-height:820px)]:hidden",
-      )}
-    >
-      <h2 className="shrink-0 text-base font-semibold">{titulo}</h2>
-      {errorTotales && !totales ? (
-        <p className="flex flex-wrap items-center gap-2 text-sm text-default-600">
-          No se pudieron cargar los totales. Vuelve a intentarlo.
-          <Button size="sm" variant="flat" onPress={onReintentar}>
-            Reintentar
-          </Button>
         </p>
-      ) : (
-        <dl
-          className={cn(
-            "grid grid-cols-1 gap-x-8 sm:grid-cols-2",
-            ancho && "min-w-0 flex-1 lg:grid-cols-4",
-          )}
+        {detalle}
+      </div>
+      {/* La píldora es el enlace principal; su ::after estira el clic a toda la tarjeta. */}
+      <Link
+        aria-label={`Ver los ${pendientes} pedidos de ayer sin factura`}
+        className={cn(
+          "inline-flex h-8 shrink-0 items-center gap-1 rounded-full bg-warning-100 px-3 text-sm font-medium text-warning-700",
+          ESTIRADO,
+          "after:rounded-xl",
+        )}
+        href={enlaceLista(dia, F_PENDIENTES)}
+        style={SIN_POSICION}
+      >
+        Ver {pendientes === 1 ? "el pedido" : `los ${pendientes}`}
+        <svg
+          aria-hidden
+          className="size-3.5"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
         >
-          <Fila
-            cargando={cargandoTotales}
-            etiqueta="Total"
-            valor={totales?.total ?? 0}
-          />
-          <Fila
-            cargando={cargandoTotales}
-            etiqueta="Completados"
-            tono="ok"
-            valor={totales?.completados ?? 0}
-          />
-          <Fila
-            cargando={cargandoTotales}
-            etiqueta="En proceso"
-            tono="aviso"
-            valor={totales?.enProceso ?? 0}
-          />
-          <Fila
-            cargando={cargandoTotales}
-            etiqueta="Expirados"
-            valor={totales?.expirados ?? 0}
-          />
-        </dl>
-      )}
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      </Link>
     </div>
-  );
-}
-
-/** Los totales como franja de ancho completo, para los roles que no tienen resumen diario. */
-export function FranjaTotales(props: {
-  titulo: string;
-  totales: Totales | null;
-  cargandoTotales: boolean;
-  errorTotales: string | null;
-  onReintentar: () => void;
-}) {
-  return (
-    <section aria-label={props.titulo}>
-      <BloqueTotales {...props} ancho />
-    </section>
   );
 }
 
 /**
  * Resumen diario, sin cajas: una sola cifra grande («Facturados hoy») y el resto en líneas
- * finas separadas por filetes, cada una con su enlace a la lista ya filtrada. Sin
- * `resumen` (el rol no lo recibe) sólo quedan los totales.
+ * finas, cada una un enlace entero a la lista ya filtrada. Sin `resumen` (el rol no lo
+ * recibe) sólo quedan los totales.
  */
 export function Resumen({
   verResumen,
@@ -350,6 +445,7 @@ export function Resumen({
   enlaceFacturacion,
   entre,
   tituloTotales = "Pedidos en total",
+  anioTotales,
 }: {
   verResumen: boolean;
   verTotales: boolean;
@@ -368,6 +464,8 @@ export function Resumen({
   /** Lo que va entre el resumen diario y los totales (el bloque de ayer). */
   entre?: ReactNode;
   tituloTotales?: string;
+  /** El año de los totales, para que sus enlaces lleven a ese año. */
+  anioTotales?: number | null;
 }) {
   const t = resumen?.totales;
   const conFactura = (t?.facturado ?? 0) + (t?.cambiado ?? 0);
@@ -411,18 +509,20 @@ export function Resumen({
         )}
       >
         {verResumen && (
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col">
               <h2 className="text-base font-semibold">
                 Resumen diario
                 <span className="ml-2 text-sm font-normal text-default-500">
                   {fechaLarga(dia)}
                 </span>
               </h2>
-              {pasada && (
-                <span className="text-xs text-default-500">
-                  Facturas comprobadas {haceCuanto(pasada.cuando)}
-                </span>
+              {resumen && (
+                <p className="text-xs text-default-500">
+                  {pasada
+                    ? `Facturas comprobadas ${haceCuanto(pasada.cuando)}`
+                    : "Sin comprobación de facturas reciente"}
+                </p>
               )}
             </div>
 
@@ -437,88 +537,108 @@ export function Resumen({
             ) : (
               <>
                 {/* Lo que se facturó hoy, de cualquier día: Camagüey, por ejemplo, factura
-                  el día siguiente, y contar sólo los pedidos de hoy parecía que no se
-                  facturaba nada. Es la única cifra grande del resumen. */}
-                <div className="flex items-baseline gap-3">
+                    el día siguiente, y contar sólo los pedidos de hoy parecía que no se
+                    facturaba nada. Es la única cifra grande. Si el rol puede entrar a
+                    Facturación, el bloque entero es el enlace (estirado). */}
+                <div
+                  className={cn(
+                    "relative flex items-baseline gap-3 rounded-lg",
+                    enlaceFacturacion &&
+                      "-mx-2 px-2 py-1.5 transition-colors hover:bg-default-100 motion-reduce:transition-none",
+                  )}
+                >
                   {esperando ? (
                     <Skeleton className="rounded-lg">
                       <span className="block h-9 w-14" />
                     </Skeleton>
                   ) : (
                     <span className="text-4xl font-semibold leading-none tabular-nums text-success-600">
-                      {resumen?.facturadosEseDia ?? 0}
+                      {eseDia}
                     </span>
                   )}
                   <span className="text-sm text-default-600">
-                    facturados hoy
+                    {enlaceFacturacion ? (
+                      <Link
+                        aria-label={`Facturados hoy: ${eseDia}. Abrir Facturación`}
+                        className={cn(
+                          "text-sm text-default-600",
+                          ESTIRADO,
+                          "after:rounded-lg",
+                        )}
+                        href="/panel/sincronizacion/facturacion"
+                        style={SIN_POSICION}
+                      >
+                        facturados hoy
+                      </Link>
+                    ) : (
+                      "facturados hoy"
+                    )}
                     <span className="block text-xs text-default-500">
                       {desgloseFacturados}
-                      {enlaceFacturacion && (
-                        <>
-                          {" "}
-                          <Link
-                            className="text-xs"
-                            href="/panel/sincronizacion/facturacion"
-                          >
-                            Ver facturación
-                          </Link>
-                        </>
-                      )}
                     </span>
                   </span>
                 </div>
 
-                <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
-                  <Fila
-                    aria={`Pedidos de hoy: ${t?.total ?? 0}. Ver los pedidos`}
-                    cargando={esperando}
-                    etiqueta="Pedidos de hoy"
-                    href={enlaceLista(dia)}
-                    valor={t?.total ?? 0}
-                  />
-                  <Fila
-                    aria={`De los pedidos de hoy, ${conFactura} con factura. Ver los pedidos`}
-                    cargando={esperando}
-                    etiqueta="Pedidos de hoy con factura"
-                    href={enlaceLista(dia, F_CON_FACTURA)}
-                    tono={conFactura ? "ok" : "suave"}
-                    valor={conFactura}
-                  />
-                  <Fila
-                    aria={`${t?.buscando ?? 0} pedidos de hoy buscando factura. Ver los pedidos`}
-                    cargando={esperando}
-                    etiqueta="Buscando factura"
-                    href={enlaceLista(dia, F_SIN_FACTURA)}
-                    tono={t?.buscando ? "base" : "suave"}
-                    valor={t?.buscando ?? 0}
-                  />
-                  {/* Discreto: un pedido de hoy sin factura es lo normal, se factura mañana. */}
-                  <Fila
-                    aria={`${t?.no_aparecio ?? 0} pedidos de hoy sin factura. Ver los pedidos`}
-                    cargando={esperando}
-                    etiqueta="Sin factura"
-                    href={enlaceLista(dia, F_SIN_FACTURA)}
-                    tono={t?.no_aparecio ? "base" : "suave"}
-                    valor={t?.no_aparecio ?? 0}
-                  />
-                  <Fila
-                    aria={`${t?.sin_completar ?? 0} pedidos de hoy sin completar. Ver los pedidos`}
-                    cargando={esperando}
-                    etiqueta="Sin completar"
-                    href={enlaceLista(dia, F_SIN_COMPLETAR)}
-                    tono={t?.sin_completar ? "base" : "suave"}
-                    valor={t?.sin_completar ?? 0}
-                  />
-                </dl>
+                <div className="flex flex-col gap-1">
+                  {esperando ? (
+                    <p className="px-2 text-sm text-default-600">
+                      Pedidos de hoy · …
+                    </p>
+                  ) : (
+                    <Link
+                      aria-label={`Pedidos de hoy: ${t?.total ?? 0}. Ver la lista`}
+                      className={cn(
+                        "flex w-full justify-start gap-1 rounded-md px-2 py-1 text-sm text-default-600 hover:bg-default-100",
+                        FOCO_FILA,
+                      )}
+                      href={enlaceLista(dia)}
+                    >
+                      Pedidos de hoy ·{" "}
+                      <strong className="font-semibold tabular-nums text-foreground">
+                        {t?.total ?? 0}
+                      </strong>
+                    </Link>
+                  )}
+                  <div className="grid grid-cols-2 gap-x-6" role="list">
+                    <Fila
+                      aria={`Pedidos de hoy con factura: ${conFactura}. Ver la lista`}
+                      cargando={esperando}
+                      etiqueta="Con factura"
+                      href={enlaceLista(dia, F_CON_FACTURA)}
+                      tono={conFactura ? "ok" : "suave"}
+                      valor={conFactura}
+                    />
+                    {/* Discreto: un pedido de hoy sin factura es lo normal, se factura mañana. */}
+                    <Fila
+                      aria={`Pedidos de hoy sin factura: ${t?.no_aparecio ?? 0}. Ver la lista`}
+                      cargando={esperando}
+                      etiqueta="Sin factura"
+                      href={enlaceLista(dia, F_SIN_FACTURA)}
+                      tono={t?.no_aparecio ? "base" : "suave"}
+                      valor={t?.no_aparecio ?? 0}
+                    />
+                    <Fila
+                      aria={`Pedidos de hoy buscando factura: ${t?.buscando ?? 0}. Ver la lista`}
+                      cargando={esperando}
+                      etiqueta="Buscando factura"
+                      href={enlaceLista(dia, F_SIN_FACTURA)}
+                      tono={t?.buscando ? "base" : "suave"}
+                      valor={t?.buscando ?? 0}
+                    />
+                    <Fila
+                      aria={`Pedidos de hoy sin completar: ${t?.sin_completar ?? 0}. Ver la lista`}
+                      cargando={esperando}
+                      etiqueta="Sin completar"
+                      href={enlaceLista(dia, F_SIN_COMPLETAR)}
+                      tono={t?.sin_completar ? "base" : "suave"}
+                      valor={t?.sin_completar ?? 0}
+                    />
+                  </div>
+                </div>
 
                 {!esperando && t?.total === 0 && (
                   <p className="text-sm text-default-500">
                     Hoy todavía no ha entrado ningún pedido.
-                  </p>
-                )}
-                {!esperando && resumen && !pasada && (
-                  <p className="text-xs text-default-500">
-                    Aún no hay una comprobación de facturas reciente.
                   </p>
                 )}
                 {conError > 0 && (
@@ -543,6 +663,7 @@ export function Resumen({
 
         {verTotales && (
           <BloqueTotales
+            anio={anioTotales}
             cargandoTotales={cargandoTotales}
             errorTotales={errorTotales}
             ocultableEnBajo={verResumen}

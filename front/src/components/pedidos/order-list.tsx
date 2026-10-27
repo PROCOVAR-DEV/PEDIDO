@@ -636,7 +636,9 @@ export const OrdersList = ({
   const [vendedores, setVendedores] = useState<VendedorOpt[]>([]);
   // Incluir archivados en la búsqueda actual (el usuario elige). No aplica cuando el
   // estado ya es "archivados" (ahí se ven solo archivados).
-  const [incluirArchivados, setIncluirArchivados] = useState(false);
+  const [incluirArchivados, setIncluirArchivados] = useState(
+    () => new URLSearchParams(window.location.search).get("incluirArchivados") === "1",
+  );
   // Consumo propio: un filtro de la lista, no un cajón. Ver `FiltrosPedidos`.
   const [soloConsumo, setSoloConsumo] = useState(false);
   // Ver sólo lo retenido por la liberación por hora. Es un filtro más de la misma lista.

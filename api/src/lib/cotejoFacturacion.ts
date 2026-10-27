@@ -867,9 +867,31 @@ export function arrancarCotejoFacturacion(): void {
   const correrRapido = () => {
     if (enCurso) return Promise.resolve();
     enCurso = true;
+    const arrancoEnRapido = Date.now();
 
     return cotejarUnaVez({ rapido: true })
       .then((rs) => {
+        /**
+         * El parte de «última comprobación» también lo deja este carril, que corre cada 30 s.
+         *
+         * Antes lo dejaba SOLO la pasada completa, y desde que esa corre cada 3 h el parte (que
+         * caduca a las 2 h) estaba vencido casi todo el tiempo: el panel decía «aún no hay una
+         * comprobación reciente» con el cotejo funcionando.
+         */
+        void guardarUltimaPasada({
+          cuando: new Date().toISOString(),
+          segundos: Math.round((Date.now() - arrancoEnRapido) / 1000),
+          sucursales: rs.map((r) => ({
+            sucursal: r.sucursal,
+            database: r.database,
+            cotejados: r.cotejados,
+            igual: r.igual,
+            cambiado: r.cambiado,
+            sinFactura: r.sinFactura,
+            ...(r.error ? { error: r.error } : {}),
+          })),
+        });
+
         /**
          * Los errores POR SUCURSAL. Antes sólo se anotaba el fallo de toda la vuelta: si una
          * sucursal fallaba y las demás no, el error quedaba dentro del resultado y no lo veía nadie,

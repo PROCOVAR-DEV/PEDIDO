@@ -394,6 +394,7 @@ export default function PanelPage() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,9fr)_minmax(0,16fr)] xl:items-stretch">
           <div className="flex min-h-0 flex-col">
             <Resumen
+              anioTotales={selectedYear}
               cargando={hoy.cargando}
               cargandoTotales={isLoading}
               dia={hoy.dia}
@@ -444,6 +445,7 @@ export default function PanelPage() {
               lado y la gráfica con todo el ancho y el resto de la altura. */}
           {ve.has("totales") && (
             <FranjaTotales
+              anio={selectedYear}
               cargandoTotales={isLoading}
               errorTotales={error}
               titulo={
