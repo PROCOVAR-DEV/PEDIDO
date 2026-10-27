@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import { NavigationHeading } from "@/components/navigation-heading";
 import { useDashboard } from "@/providers/DashboardProvider";
 import {
@@ -13,57 +15,137 @@ import {
 import { useHoy } from "@/components/dashboard/use-hoy";
 import { getSucursalActiva } from "@/lib/sucursal-activa";
 import { LineChartCard } from "@/components/dashboard/LineChartCard";
+import { getApiBaseUrl } from "@/config";
 import { useAuthStore } from "@/stores/authStore";
 import { esRolGlobal } from "@/lib/rol-global";
 import { useLiveEvents } from "@/hooks/use-live-events";
+
+/**
+ * QUÉ VE CADA ROL EN EL PANEL. Es el único sitio: para cambiar quién ve qué se toca
+ * esta tabla y nada más.
+ *
+ * Esconder una tarjeta es comodidad. Quien lo impide de verdad es la ruta
+ * (App.tsx) y el servidor. Y lo que no se ve tampoco se PIDE: «hoy» y «retenidos»
+ * son peticiones, y sólo se hacen para los roles que las tienen.
+ *
+ *  - hoy:         la franja «Hoy» de facturación (`/facturacion/resumen`).
+ *  - retenidos:   la tarjeta «Retenidos» (`/orders?retenidos=1`). Va con «liberacion».
+ *  - totales:     los totales de pedidos (el api ya los filtra a lo que ve cada rol).
+ *  - el resto:    un acceso rápido cada uno.
+ */
+type Bloque =
+  | "hoy"
+  | "retenidos"
+  | "totales"
+  | "pedidos"
+  | "importar"
+  | "clientes"
+  | "vendedores"
+  | "perfil"
+  | "reportes"
+  | "liberacion"
+  | "usuarios"
+  | "configuracion";
+
+const GLOBAL: Bloque[] = [
+  "hoy",
+  "retenidos",
+  "totales",
+  "pedidos",
+  "importar",
+  "clientes",
+  "vendedores",
+  "reportes",
+  "liberacion",
+  "usuarios",
+  "configuracion",
+];
+const SUCURSAL_ENTERA: Bloque[] = [
+  "hoy",
+  "retenidos",
+  "totales",
+  "pedidos",
+  "importar",
+  "clientes",
+  "vendedores",
+  "reportes",
+  "liberacion",
+];
+// Lo que el código tenía para «cualquier otro rol que no es Operador ni Gestor».
+const RESTO: Bloque[] = [
+  "hoy",
+  "totales",
+  "pedidos",
+  "importar",
+  "clientes",
+  "reportes",
+];
+
+const CAPACIDADES: Record<string, readonly Bloque[]> = {
+  DESARROLLADOR: GLOBAL,
+  "SUPER ADMIN": GLOBAL,
+  ADMINISTRADOR: [...SUCURSAL_ENTERA, "usuarios"],
+  SUPERVISOR: SUCURSAL_ENTERA,
+  // Gerente no gestiona vendedores, y las rutas de importar y de reportes no lo dejan entrar
+  // (App.tsx): sin esas baldosas no hay botones que lleven a «sin permiso».
+  GERENTE: SUCURSAL_ENTERA.filter((b) => !["vendedores", "importar", "reportes"].includes(b)),
+  // Sólo lo suyo: sin informes ni facturación de la sucursal.
+  GESTOR: ["totales", "pedidos", "clientes", "perfil"],
+  // Factura: ve pedidos, vendedores y clientes de su sucursal; ni importa ni saca informes.
+  OPERADOR: ["totales", "pedidos", "vendedores", "clientes"],
+  ECONOMICA: RESTO,
+  ANALISTA: RESTO,
+  LOGISTICO: RESTO,
+};
+// Un rol que no esté en la tabla ve lo mínimo, no lo máximo.
+const MINIMO: readonly Bloque[] = ["totales", "pedidos", "clientes"];
+
+const TEXTO_CABECERA: Record<string, string> = {
+  GESTOR: "Tus pedidos y tus vendedores",
+  OPERADOR: "Pedidos y vendedores de tu sucursal para facturar",
+};
 
 export default function PanelPage() {
   const { user, session } = useAuthStore();
   const { stats, isLoading, error, refetch } = useDashboard();
   const sucursalNombre = user?.sucursal || "";
-  const isSuperAdmin = Boolean(session?.isGlobalAdmin);
 
-  // RBAC de accesos rápidos: el GESTOR solo ve LO SUYO (pedidos, importar, clientes,
-  // su perfil con sus métricas). No ve Vendedores/Usuarios/Reportes (datos ajenos).
-  const role = String(user?.role || "").toLowerCase();
-  const isGestor = role === "gestor";
-  // El OPERADOR entra aquí a diario: es quien factura, y para facturar necesita
-  // copiar el nombre del vendedor de esta vista y pegarlo en el sistema
-  // contable. Es, de hecho, quien más la usa. Se quedó fuera de esta lista
-  // cuando se le dio acceso a la vista (la ruta y el api ya se lo permitían):
-  // el resultado era un Operador con permiso para entrar pero sin ninguna
-  // puerta por la que hacerlo.
-  //
-  // Lo que NO puede hacer —dar de alta o de baja, reasignar el gestor, ver el
-  // detalle— se lo quita la propia vista, y el servidor rechaza esas rutas para
-  // su rol. Entrar a leer y copiar es justo para lo que está.
-  const canVerVendedores =
-    esRolGlobal(user?.role) ||
-    ["administrador", "supervisor", "operador"].includes(role);
-  // Liberación de pedidos por hora: los mismos que acepta el servidor.
-  const puedeLiberar =
-    esRolGlobal(user?.role) ||
-    ["administrador", "supervisor", "gerente"].includes(role);
-  const canManageUsers = esRolGlobal(user?.role) || role === "administrador";
-  // La OPERADORA factura: ve todos los pedidos de SU sucursal, sus vendedores y
-  // sus clientes, y copia los codigos al sistema contable. Lo que no hace es
-  // meter datos ni sacar informes — subir el CSV de Parranda y los reportes no
-  // son suyos. Ocultar la tarjeta es comodidad; quien lo impide de verdad es la
-  // ruta y el servidor.
-  const esOperador = role === "operador";
-  const puedeImportar = !esOperador && !isGestor;
-  const puedeVerReportes = !esOperador && !isGestor;
+  // El admin semilla (`isGlobalAdmin`) se trata como Super Admin, igual que el api.
+  const rol =
+    session?.isGlobalAdmin && !esRolGlobal(user?.role)
+      ? "SUPER ADMIN"
+      : String(user?.role || "").toUpperCase();
+  const ve = new Set<Bloque>(CAPACIDADES[rol] ?? MINIMO);
 
-  // Lo de HOY: cada bloque se pide sólo si el rol lo recibe. El resumen de facturación
-  // sigue la misma regla que Reportes (ni Operador ni Gestor).
+  // Lo de HOY: cada bloque se pide sólo si el rol lo tiene en la tabla.
   const activeSucursalId = session?.isGlobalAdmin
     ? getSucursalActiva()
     : session?.sucursalId;
   const hoy = useHoy({
-    verResumen: puedeVerReportes,
-    verRetenidos: puedeLiberar,
+    verResumen: ve.has("hoy"),
+    verRetenidos: ve.has("retenidos"),
     hayRegla: !!activeSucursalId,
   });
+
+  // Nombre de la sucursal para la línea del rol: el global no tiene una propia, así que
+  // se busca la elegida (la misma lista que ya pide el selector).
+  const [nombreElegida, setNombreElegida] = useState("");
+
+  useEffect(() => {
+    if (sucursalNombre || !activeSucursalId) return;
+    fetch(`${getApiBaseUrl()}/sucursales`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((l: Array<{ id: string; nombre: string }>) =>
+        setNombreElegida(
+          l.find((x) => x.id === activeSucursalId)?.nombre ?? "",
+        ),
+      )
+      .catch(() => undefined);
+  }, [sucursalNombre, activeSucursalId]);
+
+  const lugar =
+    sucursalNombre ||
+    (activeSucursalId ? nombreElegida : "Todas las sucursales");
 
   // El provider ya pide las estadísticas al montarse: volver a pedirlas aquí
   // duplicaba la petición en cada entrada al panel. Con enlaces lentos eso es
@@ -88,8 +170,16 @@ export default function PanelPage() {
         icon="locales"
         paragraph={
           <>
-            {fechaDeHoy()}
-            {pasada && ` · Facturas comprobadas ${haceCuanto(pasada.cuando)}`}
+            {TEXTO_CABECERA[rol] ?? (
+              <>
+                {fechaDeHoy()}
+                {pasada &&
+                  ` · Facturas comprobadas ${haceCuanto(pasada.cuando)}`}
+              </>
+            )}
+            <span className="block text-sm font-normal text-default-500">
+              {[user?.role, lugar].filter(Boolean).join(" · ")}
+            </span>
           </>
         }
         title={
@@ -101,7 +191,9 @@ export default function PanelPage() {
 
       {/* HOY y los totales en un bloque; lo retenido al lado, sólo para quien puede liberar. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className={puedeLiberar ? "lg:col-span-2" : "lg:col-span-3"}>
+        <div
+          className={ve.has("retenidos") ? "lg:col-span-2" : "lg:col-span-3"}
+        >
           <HoyPanel
             cargando={hoy.cargando}
             cargandoTotales={isLoading}
@@ -118,11 +210,12 @@ export default function PanelPage() {
                   }
                 : null
             }
-            verResumen={puedeVerReportes}
+            verResumen={ve.has("hoy")}
+            verTotales={ve.has("totales")}
             onReintentar={() => void hoy.recargar()}
           />
         </div>
-        {puedeLiberar && (
+        {ve.has("retenidos") && (
           <RetenidosCard
             cargando={hoy.cargando}
             regla={hoy.regla}
@@ -135,14 +228,16 @@ export default function PanelPage() {
       {/* Accesos: baldosas compactas por grupo. La visibilidad por rol es la de siempre. */}
       <div className="flex flex-col gap-4">
         <GrupoAccesos titulo="Trabajo diario">
-          <AccesoRapido
-            color="primary"
-            description="Ver y gestionar los pedidos"
-            href="/panel/panel-pedidos"
-            icon="pedido"
-            title="Pedidos"
-          />
-          {puedeImportar && (
+          {ve.has("pedidos") && (
+            <AccesoRapido
+              color="primary"
+              description="Ver y gestionar los pedidos"
+              href="/panel/panel-pedidos"
+              icon="pedido"
+              title="Pedidos"
+            />
+          )}
+          {ve.has("importar") && (
             <AccesoRapido
               color="primary"
               description="Archivo CSV de Parranda"
@@ -151,14 +246,16 @@ export default function PanelPage() {
               title="Importar pedido"
             />
           )}
-          <AccesoRapido
-            color="secondary"
-            description="Clientes del sistema"
-            href="/panel/clientes"
-            icon="client"
-            title="Clientes"
-          />
-          {canVerVendedores && (
+          {ve.has("clientes") && (
+            <AccesoRapido
+              color="secondary"
+              description="Clientes del sistema"
+              href="/panel/clientes"
+              icon="client"
+              title="Clientes"
+            />
+          )}
+          {ve.has("vendedores") && (
             <AccesoRapido
               color="secondary"
               description="Vendedores del sistema"
@@ -167,7 +264,7 @@ export default function PanelPage() {
               title="Vendedores"
             />
           )}
-          {isGestor && (
+          {ve.has("perfil") && (
             <AccesoRapido
               color="primary"
               description="Tus métricas y tus datos"
@@ -178,7 +275,7 @@ export default function PanelPage() {
           )}
         </GrupoAccesos>
         <GrupoAccesos titulo="Control">
-          {puedeVerReportes && (
+          {ve.has("reportes") && (
             <AccesoRapido
               color="danger"
               description="Generar y exportar reportes"
@@ -187,7 +284,7 @@ export default function PanelPage() {
               title="Reportes"
             />
           )}
-          {puedeLiberar && (
+          {ve.has("liberacion") && (
             <AccesoRapido
               color="warning"
               description="Retenidos y hora de liberación"
@@ -198,7 +295,7 @@ export default function PanelPage() {
           )}
         </GrupoAccesos>
         <GrupoAccesos titulo="Administración">
-          {canManageUsers && (
+          {ve.has("usuarios") && (
             <AccesoRapido
               color="success"
               description="Usuarios del sistema"
@@ -207,7 +304,7 @@ export default function PanelPage() {
               title="Usuarios"
             />
           )}
-          {isSuperAdmin && (
+          {ve.has("configuracion") && (
             <AccesoRapido
               color="warning"
               description="Sucursales y parámetros"

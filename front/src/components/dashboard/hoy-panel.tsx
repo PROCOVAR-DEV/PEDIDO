@@ -93,6 +93,7 @@ export interface Totales {
  */
 export function HoyPanel({
   verResumen,
+  verTotales,
   resumen,
   cargando,
   error,
@@ -102,6 +103,7 @@ export function HoyPanel({
   errorTotales,
 }: {
   verResumen: boolean;
+  verTotales: boolean;
   resumen: ResumenHoy | null;
   cargando: boolean;
   error: string | null;
@@ -221,38 +223,44 @@ export function HoyPanel({
           </section>
         )}
 
-        <section aria-label="Totales">
-          {errorTotales && !totales ? (
-            <p className="text-sm text-default-500">
-              No se pudieron cargar los totales de pedidos.
-            </p>
-          ) : (
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
-              <Cifra
-                cargando={cargandoTotales}
-                etiqueta="Total de pedidos"
-                valor={totales?.total ?? 0}
-              />
-              <Cifra
-                cargando={cargandoTotales}
-                etiqueta="Completados"
-                tono="ok"
-                valor={totales?.completados ?? 0}
-              />
-              <Cifra
-                cargando={cargandoTotales}
-                etiqueta="En proceso"
-                tono="aviso"
-                valor={totales?.enProceso ?? 0}
-              />
-              <Cifra
-                cargando={cargandoTotales}
-                etiqueta="Expirados"
-                valor={totales?.expirados ?? 0}
-              />
-            </dl>
-          )}
-        </section>
+        {verTotales && (
+          <section aria-label="Totales">
+            {errorTotales && !totales ? (
+              <p className="text-sm text-default-500">
+                No se pudieron cargar los totales de pedidos.
+              </p>
+            ) : (
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                <Cifra
+                  cargando={cargandoTotales}
+                  etiqueta="Total de pedidos"
+                  grande={!verResumen}
+                  valor={totales?.total ?? 0}
+                />
+                <Cifra
+                  cargando={cargandoTotales}
+                  etiqueta="Completados"
+                  grande={!verResumen}
+                  tono="ok"
+                  valor={totales?.completados ?? 0}
+                />
+                <Cifra
+                  cargando={cargandoTotales}
+                  etiqueta="En proceso"
+                  grande={!verResumen}
+                  tono="aviso"
+                  valor={totales?.enProceso ?? 0}
+                />
+                <Cifra
+                  cargando={cargandoTotales}
+                  etiqueta="Expirados"
+                  grande={!verResumen}
+                  valor={totales?.expirados ?? 0}
+                />
+              </dl>
+            )}
+          </section>
+        )}
       </CardBody>
     </Card>
   );
@@ -278,11 +286,11 @@ export function RetenidosCard({
     .join(" · ");
 
   return (
-    <Link className="block h-full" href="/panel/liberacion">
+    <Link className="block self-start" href="/panel/liberacion">
       <Card
         isPressable
         className={cn(
-          "h-full w-full border",
+          "w-full border",
           hay ? "border-warning-200 bg-warning-50/30" : "border-default-200",
         )}
         shadow="sm"
