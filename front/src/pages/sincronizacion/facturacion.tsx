@@ -76,7 +76,7 @@ interface Resumen {
   ultimaPasada: {
     cuando: string;
     segundos: number;
-    sucursales: Array<{ sucursal: string; error?: string }>;
+    sucursales: Array<{ sucursal: string; error?: string; errorDesde?: string }>;
   } | null;
 }
 
@@ -328,7 +328,8 @@ export default function SincronizacionFacturacionPage() {
           <CardBody className="gap-1 text-sm">
             {conError.map((s) => (
               <div key={s.sucursal} className="text-danger-600">
-                <strong>{s.sucursal}</strong>: {s.error}
+                <strong>{s.sucursal}</strong>
+                {s.errorDesde && ` falla desde ${haceCuanto(s.errorDesde)}`}: {s.error}
               </div>
             ))}
           </CardBody>

@@ -2,7 +2,7 @@ import { Router } from 'express';
 
 import prisma from '../prismaClient';
 import { estadoDeFactura, HORA_CORTE, type EstadoFactura } from '../lib/corteFacturacion';
-import { leerUltimaPasada } from '../lib/cotejoEstado';
+import { leerUltimaPasada, soloErroresSostenidos } from '../lib/cotejoEstado';
 import { extremosDelDia, hoyEnCuba } from '../lib/diaCubano';
 import { soloVisibles } from '../lib/liberacionPedidos';
 import { getRequesterContext, resolveSucursalFilter } from '../lib/sucursalContext';
@@ -153,7 +153,7 @@ router.get('/resumen', async (req, res) => {
   }
 
   const limitado = quien.isGestor || !quien.puedeImportarYReportar;
-  const ultima = await leerUltimaPasada();
+  const ultima = soloErroresSostenidos(await leerUltimaPasada());
 
   return res.json({
     dia,

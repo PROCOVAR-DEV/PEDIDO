@@ -78,14 +78,8 @@ const SUCURSAL_ENTERA: Bloque[] = [
   "liberacion",
 ];
 // Lo que el código tenía para «cualquier otro rol que no es Operador ni Gestor».
-const RESTO: Bloque[] = [
-  "hoy",
-  "totales",
-  "pedidos",
-  "importar",
-  "clientes",
-  "reportes",
-];
+// Importar y Reportes no: sus rutas (App.tsx) no los dejan entrar.
+const RESTO: Bloque[] = ["hoy", "totales", "pedidos", "clientes"];
 
 const CAPACIDADES: Record<string, readonly Bloque[]> = {
   DESARROLLADOR: GLOBAL,
@@ -299,11 +293,12 @@ export default function PanelPage() {
 
   const dato = ve.has("hoy") ? (hoy.resumen?.totales.total ?? null) : null;
 
-  // Facturación: sólo los roles que su ruta deja entrar (App.tsx) y que ven el resumen.
-  const enlaceFacturacion =
+  // El estado interno del cotejo (cuándo se comprobó, qué sucursal falló) y el enlace a
+  // Facturación, que es donde se ve: sólo Administrador, Super Admin y Desarrollador.
+  const verCotejo =
     !!session?.isGlobalAdmin ||
     esRolGlobal(user?.role) ||
-    ["ADMINISTRADOR", "SUPERVISOR"].includes(rol);
+    rol === "ADMINISTRADOR";
 
   // ALTURA: en escritorio (xl) el panel ocupa EXACTAMENTE la ventana y no hay scroll.
   // El armazón (layouts/panel.tsx) reserva `lg:py-16` (64 px arriba y abajo); aquí se
@@ -398,7 +393,6 @@ export default function PanelPage() {
               cargando={hoy.cargando}
               cargandoTotales={isLoading}
               dia={hoy.dia}
-              enlaceFacturacion={enlaceFacturacion}
               entre={
                 ve.has("hoy") ? (
                   <Ayer
@@ -426,6 +420,7 @@ export default function PanelPage() {
                     }
                   : null
               }
+              verCotejo={verCotejo}
               verResumen={ve.has("hoy")}
               verTotales={ve.has("totales")}
               onReintentar={() => void hoy.recargar()}

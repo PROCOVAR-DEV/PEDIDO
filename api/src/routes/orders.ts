@@ -37,6 +37,7 @@ import { ingestaAuth } from '../middleware/ingestaAuth';
 import { ENTREGAS_DE_FACTURA } from '../lib/estadoEntrega';
 import { soloVisibles, visibleDesde } from '../lib/liberacionPedidos';
 import { puedeReasignar } from '../lib/reasignarCliente';
+import { extremosDelDia } from '../lib/diaCubano';
 import { reglaDeSucursal } from '../lib/liberacionRegla';
 
 
@@ -486,6 +487,19 @@ router.get('/', async (req, res) => {
 
     // Facturación (Operador) no ve lo que la liberación por hora aún retiene.
     if (getRequesterContext(req).ocultaRetenidos) conditions.push(soloVisibles());
+
+    // «Facturados ese día»: los pedidos que RECIBIERON factura ese día de Cuba, sean de la fecha que sean. Es lo que
+    // cuenta «70 facturados hoy» del panel, para que ese número lleve a una lista que todos los roles pueden abrir.
+    const facturadoDia = typeof req.query.facturadoDia === 'string' ? extremosDelDia(req.query.facturadoDia) : null;
+    if (typeof req.query.facturadoDia === 'string' && req.query.facturadoDia && !facturadoDia) {
+      return res.status(400).json({ error: 'facturadoDia tiene que ser AAAA-MM-DD.' });
+    }
+    if (facturadoDia) {
+      conditions.push({
+        facturaAt: { gte: facturadoDia.desde, lte: facturadoDia.hasta },
+        facturaEstado: { in: ['igual', 'cambiado'] },
+      });
+    }
 
     // «Retenidos»: SOLO lo que la liberación por hora aún guarda (para comprobar que toma todo bien).
     const ahora = new Date();

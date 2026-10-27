@@ -3,6 +3,8 @@ import type { ResumenHoy } from "./use-hoy";
 
 import { Button, Card, CardBody, Link, Skeleton } from "@heroui/react";
 
+import { diaAnterior } from "./use-hoy";
+
 import Icons from "@/components/icons/iconify";
 import { cn } from "@/lib/utils";
 
@@ -442,7 +444,7 @@ export function Resumen({
   cargandoTotales,
   errorTotales,
   onReintentarTotales,
-  enlaceFacturacion,
+  verCotejo,
   entre,
   tituloTotales = "Pedidos en total",
   anioTotales,
@@ -459,8 +461,8 @@ export function Resumen({
   cargandoTotales: boolean;
   errorTotales: string | null;
   onReintentarTotales: () => void;
-  /** El rol puede entrar a la pantalla de Facturación (su ruta lo deja). */
-  enlaceFacturacion: boolean;
+  /** Ve el estado interno del cotejo (y la pantalla de Facturación): sólo administradores. */
+  verCotejo: boolean;
   /** Lo que va entre el resumen diario y los totales (el bloque de ayer). */
   entre?: ReactNode;
   tituloTotales?: string;
@@ -484,14 +486,39 @@ export function Resumen({
   const negrita = (n: number) => (
     <strong className="font-semibold tabular-nums text-foreground">{n}</strong>
   );
+  // Cada parte lleva a la lista de pedidos que recibieron factura HOY (`facturadoDia`):
+  // los de pedidos de hoy, y los de fechas anteriores (hasta ayer).
+  const enlaceParte = (
+    filtros: Record<string, string>,
+    aria: string,
+    hijo: ReactNode,
+  ) => (
+    <Link
+      aria-label={aria}
+      className={cn("text-xs text-default-500", ENCIMA)}
+      href={`/panel/panel-pedidos?${new URLSearchParams({ facturadoDia: dia, incluirArchivados: "1", ...filtros })}`}
+    >
+      {hijo}
+    </Link>
+  );
   const desgloseFacturados =
     resumen?.facturadosDePedidosDelDia === undefined ? (
       "pedidos que recibieron factura hoy, de cualquier día"
     ) : eseDia === 0 ? null : (
       <>
-        {deHoy > 0 && <>{negrita(deHoy)} de pedidos de hoy</>}
+        {deHoy > 0 &&
+          enlaceParte(
+            { fechaDesde: dia, fechaHasta: dia },
+            `${deHoy} facturados hoy de pedidos de hoy. Ver la lista`,
+            <span>{negrita(deHoy)} de pedidos de hoy</span>,
+          )}
         {deHoy > 0 && anteriores > 0 && " · "}
-        {anteriores > 0 && <>{negrita(anteriores)} de días anteriores</>}
+        {anteriores > 0 &&
+          enlaceParte(
+            { fechaHasta: diaAnterior(dia) },
+            `${anteriores} facturados hoy de días anteriores. Ver la lista`,
+            <span>{negrita(anteriores)} de días anteriores</span>,
+          )}
       </>
     );
 
@@ -517,7 +544,7 @@ export function Resumen({
                   {fechaLarga(dia)}
                 </span>
               </h2>
-              {resumen && (
+              {verCotejo && resumen && (
                 <p className="text-xs text-default-500">
                   {pasada
                     ? `Facturas comprobadas ${haceCuanto(pasada.cuando)}`
@@ -528,8 +555,9 @@ export function Resumen({
 
             {error && !resumen ? (
               <p className="flex flex-wrap items-center gap-2 text-sm text-default-600">
-                No se pudo cargar el resumen diario ({error}). Comprueba la
-                conexión y vuelve a intentarlo.
+                No se pudo cargar el resumen diario
+                {verCotejo ? ` (${error})` : ""}. Comprueba la conexión y vuelve
+                a intentarlo.
                 <Button size="sm" variant="flat" onPress={onReintentar}>
                   Reintentar
                 </Button>
@@ -538,15 +566,10 @@ export function Resumen({
               <>
                 {/* Lo que se facturó hoy, de cualquier día: Camagüey, por ejemplo, factura
                     el día siguiente, y contar sólo los pedidos de hoy parecía que no se
-                    facturaba nada. Es la única cifra grande. Si el rol puede entrar a
-                    Facturación, el bloque entero es el enlace (estirado). */}
-                <div
-                  className={cn(
-                    "relative flex items-baseline gap-3 rounded-lg",
-                    enlaceFacturacion &&
-                      "-mx-2 px-2 py-1.5 transition-colors hover:bg-default-100 motion-reduce:transition-none",
-                  )}
-                >
+                    facturaba nada. Es la única cifra grande. El bloque entero lleva a la
+                    lista de esos pedidos (enlace estirado); las dos partes del desglose
+                    son enlaces propios, por encima. */}
+                <div className="relative -mx-2 flex items-baseline gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-default-100 motion-reduce:transition-none">
                   {esperando ? (
                     <Skeleton className="rounded-lg">
                       <span className="block h-9 w-14" />
@@ -557,22 +580,18 @@ export function Resumen({
                     </span>
                   )}
                   <span className="text-sm text-default-600">
-                    {enlaceFacturacion ? (
-                      <Link
-                        aria-label={`Facturados hoy: ${eseDia}. Abrir Facturación`}
-                        className={cn(
-                          "text-sm text-default-600",
-                          ESTIRADO,
-                          "after:rounded-lg",
-                        )}
-                        href="/panel/sincronizacion/facturacion"
-                        style={SIN_POSICION}
-                      >
-                        facturados hoy
-                      </Link>
-                    ) : (
-                      "facturados hoy"
-                    )}
+                    <Link
+                      aria-label={`Facturados hoy: ${eseDia}. Ver la lista`}
+                      className={cn(
+                        "text-sm text-default-600",
+                        ESTIRADO,
+                        "after:rounded-lg",
+                      )}
+                      href={`/panel/panel-pedidos?${new URLSearchParams({ facturadoDia: dia, incluirArchivados: "1" })}`}
+                      style={SIN_POSICION}
+                    >
+                      facturados hoy
+                    </Link>
                     <span className="block text-xs text-default-500">
                       {desgloseFacturados}
                     </span>
@@ -641,7 +660,7 @@ export function Resumen({
                     Hoy todavía no ha entrado ningún pedido.
                   </p>
                 )}
-                {conError > 0 && (
+                {verCotejo && conError > 0 && (
                   <p className="text-xs text-warning-600">
                     {conError}{" "}
                     {conError === 1 ? "sucursal dio" : "sucursales dieron"}{" "}

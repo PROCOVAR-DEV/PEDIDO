@@ -417,6 +417,8 @@ interface FiltrosPedidos {
   domicilio: string;
   vendedor: string;
   producto: string;
+  /** Sólo los pedidos que recibieron factura ESE día (AAAA-MM-DD), sean de la fecha que sean. */
+  facturadoDia: string;
   incluirArchivados: boolean;
   /**
    * Sólo los pedidos de CONSUMO PROPIO.
@@ -447,6 +449,7 @@ const clavePedidos = (f: FiltrosPedidos, sucursal: string) =>
     f.domicilio,
     f.vendedor,
     f.producto,
+    f.facturadoDia,
     f.incluirArchivados ? "1" : "0",
     f.consumoPropio ? "1" : "0",
     f.retenidos ? "1" : "0",
@@ -470,6 +473,7 @@ const traerPedidos =
     if (f.domicilio !== "todos") params.append("domicilio", f.domicilio);
     if (f.vendedor !== "todos") params.append("vendedorId", f.vendedor);
     if (f.producto) params.append("producto", f.producto);
+    if (esFechaEnviable(f.facturadoDia)) params.append("facturadoDia", f.facturadoDia);
     // Switch: si esta activo, la busqueda incluye tambien los archivados (se
     // distinguen en la tarjeta con el chip "Archivado"). Si no, solo activos.
     if (f.incluirArchivados) params.append("incluirArchivados", "1");
@@ -574,6 +578,8 @@ export const OrdersList = ({
   const [facturasSel, setFacturasSel] = useState<string[]>(() => listaDeLaUrl("factura", facturaOptions));
   const [fechaDesde, setFechaDesde] = useState<string>(() => fechaDeLaUrl("fechaDesde"));
   const [fechaHasta, setFechaHasta] = useState<string>(() => fechaDeLaUrl("fechaHasta"));
+  // Llega por la dirección desde el panel («facturados hoy»); no tiene control propio y se quita con «Quitar filtros».
+  const [facturadoDia, setFacturadoDia] = useState<string>(() => fechaDeLaUrl("facturadoDia"));
 
   /**
    * LOS FILTROS SE APLICAN AL MOMENTO, Y ANTES NO.
@@ -605,6 +611,7 @@ export const OrdersList = ({
     setIncluirArchivados(false);
     setFechaDesde("");
     setFechaHasta("");
+    setFacturadoDia("");
     setSoloRetenidos(fijo);
     setPage(1);
   };
@@ -667,6 +674,7 @@ export const OrdersList = ({
     (soloConsumo ? 1 : 0) +
     (fechaDesde ? 1 : 0) +
     (fechaHasta ? 1 : 0) +
+    (facturadoDia ? 1 : 0) +
     (soloRetenidos && !fijo ? 1 : 0);
 
   useEffect(() => {
@@ -884,6 +892,7 @@ export const OrdersList = ({
     domicilio: domicilioFilter,
     vendedor: vendedorFilter,
     producto: productoFilter,
+    facturadoDia,
     incluirArchivados,
     consumoPropio: soloConsumo,
     retenidos: soloRetenidos,
@@ -1336,6 +1345,7 @@ export const OrdersList = ({
     vendedorFilter,
     fechaDesde,
     fechaHasta,
+    facturadoDia,
     incluirArchivados,
     soloConsumo,
     soloRetenidos,
