@@ -49,16 +49,16 @@ export function AccesoRapido({
   return (
     <Link
       className={cn(
-        "relative flex min-h-[88px] items-center gap-3 rounded-xl border border-default-200 bg-content1 p-3 text-foreground transition-colors hover:border-default-400 hover:bg-default-100",
+        "relative flex min-h-[76px] items-center gap-3 rounded-xl border border-default-200 bg-content1 p-2.5 text-foreground transition-colors hover:border-default-400 hover:bg-default-100",
         FOCO,
         className,
       )}
       href={href}
     >
       <span
-        className={cn("flex shrink-0 rounded-lg border p-2.5", COLORES[color])}
+        className={cn("flex shrink-0 rounded-lg border p-2", COLORES[color])}
       >
-        {Icono && <Icono aria-hidden className="size-7" />}
+        {Icono && <Icono aria-hidden className="size-6" />}
       </span>
       <span className={cn("flex min-w-0 flex-col", conInsignia && "pr-9")}>
         <span className="text-base font-semibold leading-tight">{title}</span>
@@ -109,7 +109,7 @@ export function AccesoPrincipal({
   return (
     <Link
       className={cn(
-        "flex min-h-[88px] items-center gap-3 rounded-2xl bg-primary p-4 text-primary-foreground transition-colors hover:bg-primary-600",
+        "flex min-h-[76px] items-center gap-3 rounded-2xl bg-primary p-3 text-primary-foreground transition-colors hover:bg-primary-600",
         alto && "xl:flex-col xl:items-stretch xl:justify-between",
         FOCO,
         className,

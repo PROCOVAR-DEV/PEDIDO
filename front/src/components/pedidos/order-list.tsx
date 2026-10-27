@@ -537,6 +537,29 @@ const MIN_LETRAS_BUSQUEDA = 3;
  * `soloRetenidos`: la página de Liberación la usa FIJA en «retenidos» —sin interruptor y
  * sin poder ver los demás—. La lista normal no lo pasa y conserva su interruptor.
  */
+/**
+ * Filtros que pueden venir en la dirección (`?fechaDesde=2026-10-26&factura=igual,cambiado`),
+ * para llegar desde otra pantalla —el panel de inicio— con la lista ya filtrada.
+ *
+ * Se leen UNA vez, al crear el estado: la primera petición ya lleva los filtros (no hay
+ * lista sin filtrar que parpadee ni petición doble). Lo que no es una opción conocida se
+ * ignora, y sin parámetros todo queda como siempre.
+ */
+const listaDeLaUrl = (clave: string, validas: { value: string }[]): string[] => {
+  const crudo = new URLSearchParams(window.location.search).get(clave) ?? "";
+
+  return crudo
+    .split(",")
+    .map((v) => v.trim())
+    .filter((v) => v !== "todos" && validas.some((o) => o.value === v));
+};
+
+const fechaDeLaUrl = (clave: string): string => {
+  const v = new URLSearchParams(window.location.search).get(clave) ?? "";
+
+  return esFechaEnviable(v) ? v : "";
+};
+
 export const OrdersList = ({
   soloRetenidos: fijo = false,
   junto,
@@ -546,9 +569,11 @@ export const OrdersList = ({
   junto?: ReactNode;
 }) => {
   const [page, setPage] = useState(1);
-  const [estadosSel, setEstadosSel] = useState<string[]>([]);
+  const [estadosSel, setEstadosSel] = useState<string[]>(() => listaDeLaUrl("estado", estadoOptions));
   const [repartosSel, setRepartosSel] = useState<string[]>([]);
-  const [facturasSel, setFacturasSel] = useState<string[]>([]);
+  const [facturasSel, setFacturasSel] = useState<string[]>(() => listaDeLaUrl("factura", facturaOptions));
+  const [fechaDesde, setFechaDesde] = useState<string>(() => fechaDeLaUrl("fechaDesde"));
+  const [fechaHasta, setFechaHasta] = useState<string>(() => fechaDeLaUrl("fechaHasta"));
 
   /**
    * LOS FILTROS SE APLICAN AL MOMENTO, Y ANTES NO.
@@ -578,6 +603,8 @@ export const OrdersList = ({
     setDomicilioFilter("todos");
     setVendedorFilter("todos");
     setIncluirArchivados(false);
+    setFechaDesde("");
+    setFechaHasta("");
     setSoloRetenidos(fijo);
     setPage(1);
   };
@@ -636,9 +663,9 @@ export const OrdersList = ({
     (vendedorFilter !== "todos" ? 1 : 0) +
     (incluirArchivados ? 1 : 0) +
     (soloConsumo ? 1 : 0) +
+    (fechaDesde ? 1 : 0) +
+    (fechaHasta ? 1 : 0) +
     (soloRetenidos && !fijo ? 1 : 0);
-  const [fechaDesde, setFechaDesde] = useState<string>("");
-  const [fechaHasta, setFechaHasta] = useState<string>("");
 
   useEffect(() => {
     let vivo = true;

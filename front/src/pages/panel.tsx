@@ -11,8 +11,13 @@ import {
   AccesoPrincipal,
   AccesoRapido,
 } from "@/components/dashboard/acceso-rapido";
-import { Resumen, fechaDeHoy } from "@/components/dashboard/hoy-panel";
-import { useHoy } from "@/components/dashboard/use-hoy";
+import {
+  Ayer,
+  FranjaTotales,
+  Resumen,
+  fechaDeHoy,
+} from "@/components/dashboard/hoy-panel";
+import { diaAnterior, useHoy } from "@/components/dashboard/use-hoy";
 import { getSucursalActiva } from "@/lib/sucursal-activa";
 import { LineChartCard } from "@/components/dashboard/LineChartCard";
 import { getApiBaseUrl } from "@/config";
@@ -110,7 +115,7 @@ const TEXTO_CABECERA: Record<string, string> = {
 
 export default function PanelPage() {
   const { user, session } = useAuthStore();
-  const { stats, isLoading, error, refetch } = useDashboard();
+  const { stats, isLoading, error, refetch, selectedYear } = useDashboard();
   const sucursalNombre = user?.sucursal || "";
 
   // El admin semilla (`isGlobalAdmin`) se trata como Super Admin, igual que el api.
@@ -293,18 +298,39 @@ export default function PanelPage() {
 
   const dato = ve.has("hoy") ? (hoy.resumen?.totales.total ?? null) : null;
 
+  // Facturación: sólo los roles que su ruta deja entrar (App.tsx) y que ven el resumen.
+  const enlaceFacturacion =
+    !!session?.isGlobalAdmin ||
+    esRolGlobal(user?.role) ||
+    ["ADMINISTRADOR", "SUPERVISOR"].includes(rol);
+
+  // ALTURA: en escritorio (xl) el panel ocupa EXACTAMENTE la ventana y no hay scroll.
+  // El armazón (layouts/panel.tsx) reserva `lg:py-16` (64 px arriba y abajo); aquí se
+  // recuperan 48 de cada lado (-mt-12 / -mb-12) y la altura es la de la ventana menos los
+  // 32 px que quedan. Reparto: cabecera y baldosas con su alto, y la última fila
+  // (resumen + gráfica) se queda con TODO el resto (`minmax(0,1fr)`), así que cede si la
+  // ventana es baja. Con 920 px útiles: 888 de panel = 40 cabecera + 164 baldosas + 24
+  // huecos + 660 de la fila de abajo. Con 768: 736 = 40 + 164 + 24 + 508.
   return (
-    <section className="flex flex-col gap-5">
-      {/* Cabecera de una línea: sin el bloque grande de siempre, que se comía la altura
-          que necesitan las baldosas. */}
-      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-primary">Inicio</h1>
-          <p className="flex flex-wrap gap-x-4 text-sm text-default-500">
-            <span>{dondeEstas}</span>
-            <span>{fechaDeHoy()}</span>
-            {TEXTO_CABECERA[rol] && <span>{TEXTO_CABECERA[rol]}</span>}
-          </p>
+    <section
+      className={cn(
+        "flex flex-col gap-4 xl:-mb-12 xl:-mt-12 xl:grid xl:h-[calc(100dvh-2rem)] xl:gap-3",
+        ve.has("hoy")
+          ? "xl:grid-rows-[auto_auto_minmax(0,1fr)]"
+          : "xl:grid-rows-[auto_auto_auto_minmax(0,1fr)]",
+      )}
+    >
+      {/* Cabecera de UNA línea. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-5 gap-y-0.5">
+          <h1 className="text-xl font-bold text-primary">Inicio</h1>
+          <span className="text-sm text-default-500">{dondeEstas}</span>
+          <span className="text-sm text-default-500">{fechaDeHoy()}</span>
+          {TEXTO_CABECERA[rol] && (
+            <span className="text-sm text-default-500">
+              {TEXTO_CABECERA[rol]}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SucursalSelector />
@@ -314,7 +340,8 @@ export default function PanelPage() {
             color="primary"
             href="/"
             radius="md"
-            startContent={<Icons.back className="size-5" />}
+            size="sm"
+            startContent={<Icons.back className="size-4" />}
             variant="flat"
           >
             Ir al inicio
@@ -325,7 +352,7 @@ export default function PanelPage() {
       {/* 1. LOS ACCESOS: lo principal del panel. */}
       <nav
         aria-label="Accesos rápidos"
-        className="grid grid-cols-2 gap-3 xl:[grid-template-columns:repeat(var(--columnas),minmax(0,1fr))]"
+        className="grid grid-cols-2 gap-3 xl:auto-rows-[76px] xl:[grid-template-columns:repeat(var(--columnas),minmax(0,1fr))]"
         style={{ "--columnas": columnas } as CSSProperties}
       >
         {principal && (
@@ -361,38 +388,95 @@ export default function PanelPage() {
         })}
       </nav>
 
-      {/* 2. EL RESUMEN y la evolución, en la misma fila y a la misma altura. */}
-      <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-12">
-        <div className={ve.has("hoy") ? "xl:col-span-5" : "xl:col-span-4"}>
-          <Resumen
-            cargando={hoy.cargando}
-            cargandoTotales={isLoading}
-            error={hoy.error}
-            errorTotales={error}
-            resumen={hoy.resumen}
-            totales={
-              stats
-                ? {
-                    total: stats.totalPedidos,
-                    completados: stats.pedidosCompletados,
-                    enProceso: stats.pedidosEnProceso,
-                    expirados: stats.pedidosExpirados,
-                  }
-                : null
-            }
-            verResumen={ve.has("hoy")}
-            verTotales={ve.has("totales")}
-            onReintentar={() => void hoy.recargar()}
-            onReintentarTotales={() => void refetch()}
-          />
+      {/* 2. RESUMEN DIARIO (con el aviso de ayer) y evolución anual, a la misma altura. */}
+      {ve.has("hoy") ? (
+        <div className="grid grid-cols-1 gap-4 xl:min-h-0 xl:grid-cols-12">
+          <div
+            className={cn(
+              "flex min-h-0 flex-col",
+              ve.has("hoy") ? "xl:col-span-5" : "xl:col-span-4",
+            )}
+          >
+            <Resumen
+              cargando={hoy.cargando}
+              cargandoTotales={isLoading}
+              dia={hoy.dia}
+              enlaceFacturacion={enlaceFacturacion}
+              entre={
+                ve.has("hoy") ? (
+                  <Ayer
+                    cargando={hoy.cargando}
+                    dia={diaAnterior(hoy.dia)}
+                    error={hoy.errorAyer}
+                    resumen={hoy.ayer}
+                    onReintentar={() => void hoy.recargar()}
+                  />
+                ) : null
+              }
+              error={hoy.error}
+              errorTotales={error}
+              resumen={hoy.resumen}
+              tituloTotales={
+                selectedYear ? `Pedidos de ${selectedYear}` : "Pedidos en total"
+              }
+              totales={
+                stats
+                  ? {
+                      total: stats.totalPedidos,
+                      completados: stats.pedidosCompletados,
+                      enProceso: stats.pedidosEnProceso,
+                      expirados: stats.pedidosExpirados,
+                    }
+                  : null
+              }
+              verResumen={ve.has("hoy")}
+              verTotales={ve.has("totales")}
+              onReintentar={() => void hoy.recargar()}
+              onReintentarTotales={() => void refetch()}
+            />
+          </div>
+          <section
+            aria-label="Evolución anual"
+            className={cn(
+              "h-[340px] xl:h-full xl:min-h-0",
+              ve.has("hoy") ? "xl:col-span-7" : "xl:col-span-8",
+            )}
+          >
+            <LineChartCard />
+          </section>
         </div>
-        <section
-          aria-label="Evolución anual"
-          className={ve.has("hoy") ? "xl:col-span-7" : "xl:col-span-8"}
-        >
-          <LineChartCard compacto />
-        </section>
-      </div>
+      ) : (
+        <>
+          {/* Sin resumen diario (Operador, Gestor…): los totales en una franja de lado a
+              lado y la gráfica con todo el ancho y el resto de la altura. */}
+          {ve.has("totales") && (
+            <FranjaTotales
+              cargandoTotales={isLoading}
+              errorTotales={error}
+              titulo={
+                selectedYear ? `Pedidos de ${selectedYear}` : "Pedidos en total"
+              }
+              totales={
+                stats
+                  ? {
+                      total: stats.totalPedidos,
+                      completados: stats.pedidosCompletados,
+                      enProceso: stats.pedidosEnProceso,
+                      expirados: stats.pedidosExpirados,
+                    }
+                  : null
+              }
+              onReintentar={() => void refetch()}
+            />
+          )}
+          <section
+            aria-label="Evolución anual"
+            className="h-[340px] xl:h-full xl:min-h-0"
+          >
+            <LineChartCard />
+          </section>
+        </>
+      )}
     </section>
   );
 }

@@ -74,6 +74,15 @@ export function useDiaDeCuba(): string {
   return dia;
 }
 
+/** El día anterior a uno `AAAA-MM-DD` (cuenta de calendario, sin husos: se hace a mediodía UTC). */
+export const diaAnterior = (dia: string) => {
+  const d = new Date(`${dia}T12:00:00Z`);
+
+  d.setUTCDate(d.getUTCDate() - 1);
+
+  return d.toISOString().slice(0, 10);
+};
+
 const pedir = async <T>(ruta: string): Promise<T> => {
   const r = await fetch(`${getApiBaseUrl()}${ruta}`);
 
@@ -95,6 +104,9 @@ export function useHoy(opts: {
   const { verResumen, verRetenidos, hayRegla } = opts;
   const dia = useDiaDeCuba();
   const [resumen, setResumen] = useState<ResumenHoy | null>(null);
+  // Lo de AYER: otra consulta, el día que acaba de terminar en Cuba.
+  const [ayer, setAyer] = useState<ResumenHoy | null>(null);
+  const [errorAyer, setErrorAyer] = useState<string | null>(null);
   const [retenidos, setRetenidos] = useState<RetenidosHoy | null>(null);
   const [regla, setRegla] = useState<ReglaHoy | null>(null);
   const [cargando, setCargando] = useState(verResumen || verRetenidos);
@@ -108,7 +120,7 @@ export function useHoy(opts: {
         setError(null);
       }
 
-      const [r, o, c] = await Promise.allSettled([
+      const [r, o, c, a] = await Promise.allSettled([
         verResumen
           ? pedir<ResumenHoy>("/facturacion/resumen")
           : Promise.resolve(null),
@@ -118,12 +130,23 @@ export function useHoy(opts: {
         verRetenidos && hayRegla
           ? pedir<ReglaHoy>("/liberacion")
           : Promise.resolve(null),
+        verResumen
+          ? pedir<ResumenHoy>(`/facturacion/resumen?dia=${diaAnterior(dia)}`)
+          : Promise.resolve(null),
       ]);
 
       // Una recarga de fondo que falla deja lo que ya se veía (como el resto del panel).
       if (r.status === "fulfilled") setResumen(r.value);
       if (o.status === "fulfilled") setRetenidos(o.value?.retenidos ?? null);
       if (c.status === "fulfilled") setRegla(c.value);
+      if (a.status === "fulfilled") {
+        setAyer(a.value);
+        setErrorAyer(null);
+      } else {
+        setErrorAyer(
+          a.reason instanceof Error ? a.reason.message : "No se pudo cargar",
+        );
+      }
 
       const fallo = [r, o].find((x) => x.status === "rejected") as
         | PromiseRejectedResult
@@ -138,12 +161,13 @@ export function useHoy(opts: {
       }
       if (!fondo) setCargando(false);
     },
-    [verResumen, verRetenidos, hayRegla],
+    [verResumen, verRetenidos, hayRegla, dia],
   );
 
   // Al cambiar el día (o los permisos) se vuelve a pedir TODO, y lo de ayer no se queda a la vista.
   useEffect(() => {
     setResumen(null);
+    setAyer(null);
     setRetenidos(null);
     void cargar();
   }, [cargar, dia]);
@@ -161,6 +185,8 @@ export function useHoy(opts: {
   return {
     dia,
     resumen,
+    ayer,
+    errorAyer,
     retenidos,
     regla,
     cargando,
