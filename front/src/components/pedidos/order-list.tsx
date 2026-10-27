@@ -30,7 +30,7 @@ import {
   Tabs,
 } from "@heroui/react";
 import { useEffect, useState, useCallback, useRef } from "react";
-import type { ElementType } from "react";
+import type { ElementType, ReactNode } from "react";
 
 import { usePantallaChica } from "../../hooks/pantalla";
 
@@ -537,7 +537,14 @@ const MIN_LETRAS_BUSQUEDA = 3;
  * `soloRetenidos`: la página de Liberación la usa FIJA en «retenidos» —sin interruptor y
  * sin poder ver los demás—. La lista normal no lo pasa y conserva su interruptor.
  */
-export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: boolean }) => {
+export const OrdersList = ({
+  soloRetenidos: fijo = false,
+  junto,
+}: {
+  soloRetenidos?: boolean;
+  /** Algo que va EN LA MISMA FILA que la tarjeta de filtros (a su izquierda). */
+  junto?: ReactNode;
+}) => {
   const [page, setPage] = useState(1);
   const [estadosSel, setEstadosSel] = useState<string[]>([]);
   const [repartosSel, setRepartosSel] = useState<string[]>([]);
@@ -1602,7 +1609,13 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
       </>)}
 
       {/* Filters */}
-      <Card className={cn(cards({ border: "default" }))}>
+      <div
+        className={cn(
+          junto && "grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2",
+        )}
+      >
+      {junto}
+      <Card className={cn(cards({ border: "default" }), junto && "h-full")}>
         <CardBody className="gap-4">
           {/* `items-stretch`: el botón de filtros toma el alto del buscador en vez de
               llevarlo escrito. Con un `h-14` a mano ya falló dos veces —un Input con
@@ -1660,7 +1673,12 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
             se canceló». Con uno solo no se pueden pedir. Y los tres grupos se cruzan
             entre sí: pedido Y reparto Y factura.
           */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            className={cn(
+              "grid grid-cols-1 gap-4",
+              !fijo && "sm:grid-cols-2 lg:grid-cols-3",
+            )}
+          >
             {!fijo && (<>
             {gruposDeEstado.map((g) => (
               <Select
@@ -1767,7 +1785,12 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
               se usan mientras se factura —el filtro de consumo propio y la lista de
               vendedores—, que además es donde se está mirando: el buscador y los filtros.
               Alto `h-14` para que queden a ras de las fechas, que son `size="lg"`. */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div
+            className={cn(
+              "grid grid-cols-1 gap-4 sm:grid-cols-2",
+              !fijo && "lg:grid-cols-4",
+            )}
+          >
             <Input
               isClearable
               className="w-full"
@@ -1860,6 +1883,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
           )}
         </CardBody>
       </Card>
+      </div>
 
       {/* LO QUE ESTÁ ENTRANDO, donde antes sólo ponía "En vivo".
           "En vivo" decía que la conexión estaba abierta, no que estuvieran entrando datos

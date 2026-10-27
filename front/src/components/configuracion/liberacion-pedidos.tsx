@@ -68,7 +68,7 @@ export const LiberacionPedidos = () => {
   };
 
   return (
-    <Card className={cards()}>
+    <Card className={`${cards()} h-full`}>
       <CardBody>
         <div className="flex flex-col gap-4">
           <h3 className="text-lg font-semibold text-primary">

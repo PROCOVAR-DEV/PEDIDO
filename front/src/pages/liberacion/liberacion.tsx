@@ -12,9 +12,8 @@ export default function LiberacionPage() {
         title="Liberación de pedidos"
       />
 
-      <LiberacionPedidos />
-
-      <OrdersList soloRetenidos />
+      {/* La regla y los filtros comparten fila: son controles pequeños. */}
+      <OrdersList junto={<LiberacionPedidos />} soloRetenidos />
     </section>
   );
 }
