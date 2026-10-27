@@ -16,6 +16,8 @@ export interface ResumenHoy {
     sin_completar: number;
     sin_cotejar: number;
   };
+  /** Pedidos que recibieron factura ese día, sean de la fecha que sean. */
+  facturadosEseDia?: number;
   ultimaPasada: {
     cuando: string;
     segundos: number;

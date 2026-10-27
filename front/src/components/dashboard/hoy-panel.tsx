@@ -132,36 +132,50 @@ export function HoyPanel({
               </p>
             ) : (
               <>
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-5">
+                {/* Lo que se facturó hoy, de cualquier día: Camagüey, por ejemplo, factura
+                    el día siguiente, y contar sólo los pedidos de hoy parecía que no
+                    se facturaba nada. */}
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm text-default-500">Facturados hoy</p>
+                  {esperando ? (
+                    <Skeleton className="rounded-lg">
+                      <div className="h-10 w-16" />
+                    </Skeleton>
+                  ) : (
+                    <p className="text-5xl font-semibold tabular-nums text-success-600">
+                      {resumen?.facturadosEseDia ?? 0}
+                    </p>
+                  )}
+                  <p className="text-xs text-default-500">
+                    pedidos que recibieron factura hoy, de cualquier día
+                  </p>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-5">
                   <Cifra
-                    grande
                     cargando={esperando}
-                    etiqueta="Pedidos del día"
+                    etiqueta="Pedidos de hoy"
                     valor={t?.total ?? 0}
                   />
                   <Cifra
-                    grande
                     cargando={esperando}
-                    etiqueta="Con factura"
-                    tono="ok"
+                    etiqueta="De los pedidos de hoy, con factura"
+                    tono={conFactura ? "ok" : "suave"}
                     valor={conFactura}
                   />
                   <Cifra
-                    grande
                     cargando={esperando}
                     etiqueta="Buscando factura"
                     tono={t?.buscando ? "base" : "suave"}
                     valor={t?.buscando ?? 0}
                   />
+                  {/* Discreto: un pedido de hoy sin factura es lo normal, se factura mañana. */}
                   <Cifra
-                    grande
                     cargando={esperando}
                     etiqueta="Sin factura"
-                    tono={t?.no_aparecio ? "aviso" : "suave"}
+                    tono={t?.no_aparecio ? "base" : "suave"}
                     valor={t?.no_aparecio ?? 0}
                   />
                   <Cifra
-                    grande
                     cargando={esperando}
                     etiqueta="Sin completar"
                     tono={t?.sin_completar ? "base" : "suave"}
@@ -176,10 +190,10 @@ export function HoyPanel({
                     </p>
                   ) : (
                     <Progress
-                      aria-label="Pedidos del día con factura"
+                      aria-label="Pedidos de hoy ya facturados"
                       classNames={{ label: "text-sm text-default-500" }}
                       color="success"
-                      label={`${conFactura} de ${t.total} pedidos del día tienen factura`}
+                      label={`Pedidos de hoy ya facturados: ${conFactura} de ${t.total}`}
                       size="sm"
                       value={(conFactura / t.total) * 100}
                     />

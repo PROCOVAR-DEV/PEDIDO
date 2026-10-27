@@ -91,6 +91,21 @@ router.get('/resumen', async (req, res) => {
     },
   });
 
+  /**
+   * Los pedidos que RECIBIERON factura ese día, sean de la fecha que sean.
+   *
+   * No es lo mismo que los facturados de entre los pedidos del día: en las sucursales que facturan
+   * al día siguiente (Camagüey) las facturas de hoy son de pedidos de ayer, y mirar solo los
+   * pedidos de hoy hacía parecer que casi no se facturaba nada.
+   */
+  const facturadosEseDia = await prisma.pedido.count({
+    where: {
+      facturaAt: { gte: rango.desde, lte: rango.hasta },
+      facturaEstado: { in: ['igual', 'cambiado'] },
+      ...(sucursalId ? { sucursalId } : {}),
+    },
+  });
+
   const ahora = new Date();
   const vacio = () => ({
     total: 0, facturado: 0, cambiado: 0, buscando: 0,
@@ -118,6 +133,7 @@ router.get('/resumen', async (req, res) => {
     dia,
     hoy: hoyEnCuba(),
     horaCorte: HORA_CORTE,
+    facturadosEseDia,
     totales,
     sucursales: [...porSucursal.values()].sort((a, b) => b.total - a.total),
     ultimaPasada: await leerUltimaPasada(),
