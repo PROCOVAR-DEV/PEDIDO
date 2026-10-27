@@ -128,6 +128,11 @@ export interface PaginationData {
 export interface RespuestaPedidos {
   data: Order[];
   pagination: PaginationData;
+  /** Lo retenido por la regla de liberación; vacío para el Operador. */
+  retenidos?: {
+    total: number;
+    porSucursal: { sucursalId: string | null; sucursal: string; total: number }[];
+  };
 }
 
 /**

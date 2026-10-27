@@ -426,6 +426,8 @@ interface FiltrosPedidos {
    * que hay que abrir y cerrar mientras se factura.
    */
   consumoPropio: boolean;
+  /** Sólo los pedidos retenidos por la liberación por hora (`retenidos=1`). */
+  retenidos: boolean;
 }
 
 /** La clave de cache: TIENE que llevar todo lo que cambia el resultado. */
@@ -447,6 +449,7 @@ const clavePedidos = (f: FiltrosPedidos, sucursal: string) =>
     f.producto,
     f.incluirArchivados ? "1" : "0",
     f.consumoPropio ? "1" : "0",
+    f.retenidos ? "1" : "0",
   ].join(":");
 
 const traerPedidos =
@@ -471,6 +474,7 @@ const traerPedidos =
     // distinguen en la tarjeta con el chip "Archivado"). Si no, solo activos.
     if (f.incluirArchivados) params.append("incluirArchivados", "1");
     if (f.consumoPropio) params.append("consumoPropio", "1");
+    if (f.retenidos) params.append("retenidos", "1");
 
     const r = await fetch(`${getApiBaseUrl()}/orders?${params}`, { signal });
 
@@ -596,6 +600,8 @@ export const OrdersList = () => {
   const [incluirArchivados, setIncluirArchivados] = useState(false);
   // Consumo propio: un filtro de la lista, no un cajón. Ver `FiltrosPedidos`.
   const [soloConsumo, setSoloConsumo] = useState(false);
+  // Ver sólo lo retenido por la liberación por hora. Es un filtro más de la misma lista.
+  const [soloRetenidos, setSoloRetenidos] = useState(false);
   // Los productos que existen en esta sucursal, para el selector del filtro. Se piden
   // una vez: cambian cuando entran pedidos nuevos, no mientras se mira la lista.
   const [orderToReabrir, setOrderToReabrir] = useState<Order | null>(null);
@@ -617,7 +623,8 @@ export const OrdersList = () => {
     (domicilioFilter !== "todos" ? 1 : 0) +
     (vendedorFilter !== "todos" ? 1 : 0) +
     (incluirArchivados ? 1 : 0) +
-    (soloConsumo ? 1 : 0);
+    (soloConsumo ? 1 : 0) +
+    (soloRetenidos ? 1 : 0);
   const [fechaDesde, setFechaDesde] = useState<string>("");
   const [fechaHasta, setFechaHasta] = useState<string>("");
 
@@ -832,6 +839,7 @@ export const OrdersList = () => {
     producto: productoFilter,
     incluirArchivados,
     consumoPropio: soloConsumo,
+    retenidos: soloRetenidos,
   };
 
   // Sin filtros = primera pagina y orden por fecha: ahi SI se puede insertar un
@@ -883,6 +891,12 @@ export const OrdersList = () => {
 
   const orders = datos?.data ?? SIN_PEDIDOS;
   const pagination = datos?.pagination ?? PAGINACION_VACIA;
+  const retenidos = datos?.retenidos;
+  const totalRetenidos = retenidos?.total ?? 0;
+  // El Operador no ve lo retenido (el api le manda el contador vacío), así que no
+  // se le enseña el interruptor; a los demás, sólo si hay algo o ya está puesto.
+  const verRetenidos =
+    session?.rol !== "OPERADOR" && (totalRetenidos > 0 || soloRetenidos);
 
   /**
    * El pedido del detalle, sacado SIEMPRE de la lista viva.
@@ -1240,6 +1254,7 @@ export const OrdersList = () => {
     fechaHasta,
     incluirArchivados,
     soloConsumo,
+    soloRetenidos,
   ]);
 
   // Pedidos en tiempo real: lo lleva el store (opcion `aplicar` de arriba). Va por
@@ -1747,6 +1762,31 @@ export const OrdersList = () => {
           {/* Al final, debajo de las fechas: esto no es un filtro más —no acota lo que se
               busca, sino DÓNDE se busca—, y puesto entre la rejilla y las fechas partía el
               bloque por la mitad. */}
+          {verRetenidos && (
+            <div className="flex flex-col gap-1">
+              <Switch
+                isSelected={soloRetenidos}
+                size="sm"
+                onValueChange={(v) => {
+                  setSoloRetenidos(v);
+                  setPage(1);
+                }}
+              >
+                <span className="text-sm text-default-600">
+                  Retenidos ({totalRetenidos})
+                </span>
+              </Switch>
+              {/* Con «Todas» hay que saber de qué sucursal es cada uno. Solo texto:
+                  cambiar de sucursal recarga la página y se perdería el interruptor. */}
+              {!activeSucursalId && (retenidos?.porSucursal.length ?? 0) > 0 && (
+                <p className="text-xs text-default-500">
+                  {retenidos!.porSucursal
+                    .map((x) => `${x.sucursal} ${x.total}`)
+                    .join(" · ")}
+                </p>
+              )}
+            </div>
+          )}
           <Switch
             isSelected={incluirArchivados}
             size="sm"
@@ -2105,7 +2145,9 @@ export const OrdersList = () => {
             <Card className={cards({ border: "default" })}>
               <CardBody className="py-6 text-center">
                 <p className="text-default-500">
-                  No se encontraron pedidos con los filtros aplicados
+                  {soloRetenidos
+                    ? "No hay pedidos retenidos"
+                    : "No se encontraron pedidos con los filtros aplicados"}
                 </p>
               </CardBody>
             </Card>

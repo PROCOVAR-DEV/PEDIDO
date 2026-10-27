@@ -487,6 +487,12 @@ router.get('/', async (req, res) => {
     // Facturación (Operador) no ve lo que la liberación por hora aún retiene.
     if (getRequesterContext(req).ocultaRetenidos) conditions.push(soloVisibles());
 
+    // «Retenidos»: SOLO lo que la liberación por hora aún guarda (para comprobar que toma todo bien).
+    const ahora = new Date();
+    if (req.query.retenidos === '1' || req.query.retenidos === 'true') {
+      conditions.push({ visibleDesde: { gt: ahora } });
+    }
+
     // Combine all conditions with AND
     if (conditions.length > 0) {
       where.AND = conditions;
@@ -547,6 +553,21 @@ router.get('/', async (req, res) => {
       };
     });
 
+    // Cuántos hay retenidos ahora (de lo que alcanza este usuario), en total y por sucursal.
+    // Al Operador no se le cuenta lo que no puede ver.
+    const retenidosPorSucursal = getRequesterContext(req).ocultaRetenidos ? [] : await prisma.pedido.groupBy({
+      by: ['sucursalId'],
+      where: { sucursalId, visibleDesde: { gt: ahora }, ...(gestorCtx.isGestor && gestorCtx.userId ? { vendedor: { gestorId: gestorCtx.userId } } : {}) },
+      _count: { _all: true },
+    });
+    const nombres = retenidosPorSucursal.length
+      ? await prisma.sucursal.findMany({
+          where: { id: { in: retenidosPorSucursal.map((r) => r.sucursalId!).filter(Boolean) } },
+          select: { id: true, nombre: true },
+        })
+      : [];
+    const nombreDe = new Map(nombres.map((n) => [n.id, n.nombre]));
+
     res.json({
       data: ordersWithStatus,
       pagination: {
@@ -554,6 +575,12 @@ router.get('/', async (req, res) => {
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+      },
+      retenidos: {
+        total: retenidosPorSucursal.reduce((a, r) => a + r._count._all, 0),
+        porSucursal: retenidosPorSucursal
+          .map((r) => ({ sucursalId: r.sucursalId, sucursal: nombreDe.get(r.sucursalId ?? '') ?? 'sin sucursal', total: r._count._all }))
+          .sort((a, b) => b.total - a.total),
       },
     });
   } catch (err) {
