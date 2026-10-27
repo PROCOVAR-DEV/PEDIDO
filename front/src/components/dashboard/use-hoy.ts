@@ -18,6 +18,8 @@ export interface ResumenHoy {
   };
   /** Pedidos que recibieron factura ese día, sean de la fecha que sean. */
   facturadosEseDia?: number;
+  /** De esos, cuántos son de pedidos de ese mismo día; el resto son de días anteriores. */
+  facturadosDePedidosDelDia?: number;
   ultimaPasada: {
     cuando: string;
     segundos: number;

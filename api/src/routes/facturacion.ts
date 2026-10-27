@@ -117,6 +117,18 @@ router.get('/resumen', async (req, res) => {
     },
   });
 
+  // De esos, cuántos son de pedidos de ESE MISMO día (el resto son de días anteriores): así el 70 y el
+  // «2 con factura» de los pedidos de hoy cuadran a la vista (70 = 2 de hoy + 68 de antes).
+  const facturadosDePedidosDelDia = await prisma.pedido.count({
+    where: {
+      facturaAt: { gte: rango.desde, lte: rango.hasta },
+      facturaEstado: { in: ['igual', 'cambiado'] },
+      fecha: { gte: rango.desde, lte: rango.hasta },
+      ...(sucursalId ? { sucursalId } : {}),
+      ...soloSuyos,
+    },
+  });
+
   const ahora = new Date();
   const vacio = () => ({
     total: 0, facturado: 0, cambiado: 0, buscando: 0,
@@ -148,6 +160,7 @@ router.get('/resumen', async (req, res) => {
     hoy: hoyEnCuba(),
     horaCorte: HORA_CORTE,
     facturadosEseDia,
+    facturadosDePedidosDelDia,
     totales,
     // Quien no es de control (Operador, Gestor) no recibe el desglose ni los errores de las demás sucursales.
     sucursales: limitado ? [] : [...porSucursal.values()].sort((a, b) => b.total - a.total),

@@ -377,6 +377,26 @@ export function Resumen({
   const esperando = cargando && !resumen;
   const pasada = resumen?.ultimaPasada;
 
+  // Lo facturado hoy, repartido para que SUME: los de pedidos de hoy y los de días
+  // anteriores (Camagüey, por ejemplo, factura al día siguiente). Si el api no manda el
+  // reparto, se queda la frase de siempre en vez de inventarlo.
+  const eseDia = resumen?.facturadosEseDia ?? 0;
+  const deHoy = Math.min(resumen?.facturadosDePedidosDelDia ?? 0, eseDia);
+  const anteriores = eseDia - deHoy;
+  const negrita = (n: number) => (
+    <strong className="font-semibold tabular-nums text-foreground">{n}</strong>
+  );
+  const desgloseFacturados =
+    resumen?.facturadosDePedidosDelDia === undefined ? (
+      "pedidos que recibieron factura hoy, de cualquier día"
+    ) : eseDia === 0 ? null : (
+      <>
+        {deHoy > 0 && <>{negrita(deHoy)} de pedidos de hoy</>}
+        {deHoy > 0 && anteriores > 0 && " · "}
+        {anteriores > 0 && <>{negrita(anteriores)} de días anteriores</>}
+      </>
+    );
+
   return (
     <Card
       aria-label="Resumen diario"
@@ -432,7 +452,7 @@ export function Resumen({
                   <span className="text-sm text-default-600">
                     facturados hoy
                     <span className="block text-xs text-default-500">
-                      pedidos que recibieron factura hoy, de cualquier día
+                      {desgloseFacturados}
                       {enlaceFacturacion && (
                         <>
                           {" "}
@@ -459,7 +479,7 @@ export function Resumen({
                   <Fila
                     aria={`De los pedidos de hoy, ${conFactura} con factura. Ver los pedidos`}
                     cargando={esperando}
-                    etiqueta="De ellos, con factura"
+                    etiqueta="Pedidos de hoy con factura"
                     href={enlaceLista(dia, F_CON_FACTURA)}
                     tono={conFactura ? "ok" : "suave"}
                     valor={conFactura}
