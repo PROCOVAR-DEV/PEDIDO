@@ -87,6 +87,8 @@ export interface Order {
   completadoPor?: string | null;
   completedAt?: string | null;
   facturaNumero?: string | null;
+  /** Hora (ISO, UTC) desde la que lo ve facturación. En el futuro = retenido; nulo = visible. */
+  visibleDesde?: string | null;
   /** Cuándo se reescribió el pedido con lo que decía la factura. Null = vino bien. */
   facturaCorregidoAt?: string | null;
   /** En qué se diferenciaba, en palabras. JSON en texto. */

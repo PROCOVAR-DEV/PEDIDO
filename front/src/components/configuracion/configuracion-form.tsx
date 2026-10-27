@@ -26,6 +26,7 @@ import Icons from "../icons/iconify";
 
 import { cards } from "@/components/primitives";
 import { MantenimientoPanel } from "./mantenimiento-panel";
+import { LiberacionPedidos } from "./liberacion-pedidos";
 import { getApiBaseUrl } from "@/config";
 import { esRolGlobal } from "@/lib/rol-global";
 import { useAuthStore } from "@/stores/authStore";
@@ -510,6 +511,8 @@ export const ConfiguracionForm = () => {
           </div>
         </CardBody>
       </Card>
+
+      <LiberacionPedidos />
 
       {/* Panel de Mantenimiento (correr los scripts desde la UI) */}
       <MantenimientoPanel />

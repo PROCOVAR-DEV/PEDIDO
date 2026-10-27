@@ -109,3 +109,13 @@ export function hoyEnCuba(): string {
     day: '2-digit',
   }).format(new Date());
 }
+
+/** El día `AAAA-MM-DD` que era en Cuba en ese instante. */
+export const diaEnCuba = diaLocal;
+
+/** Los minutos transcurridos del día en Cuba en ese instante (0–1439). */
+export function minutosEnCuba(d: Date): number {
+  const c = comoSiFueraUtc(d);
+
+  return c.getUTCHours() * 60 + c.getUTCMinutes();
+}

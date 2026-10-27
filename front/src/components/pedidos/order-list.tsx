@@ -211,6 +211,19 @@ const chipDeFactura = (
   return order.facturaEstado ? facturaChip[order.facturaEstado] ?? null : null;
 };
 
+/** Retenido = `visibleDesde` en el futuro (la regla de liberación por hora). */
+const estaRetenido = (o: { visibleDesde?: string | null }) =>
+  !!o.visibleDesde && new Date(o.visibleDesde).getTime() > Date.now();
+
+/** "15:00" en la hora de Cuba, que es donde están las sucursales y la regla. */
+const horaEnCuba = (iso: string) =>
+  new Intl.DateTimeFormat("es-ES", {
+    timeZone: "America/Havana",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(iso));
+
 /**
  * Las líneas de la factura, que se guardan en TEXTO.
  *
@@ -796,6 +809,12 @@ export const OrdersList = () => {
   // solo evita enseñarle un botón que le va a dar error.
   const puedeCompletar = session?.rol !== "GESTOR";
 
+  // Liberar un pedido retenido: Supervisor y superiores. Misma lista que «reasignar
+  // clientes»; el permiso de verdad lo comprueba el servidor (403).
+  const puedeLiberar =
+    !!session?.isGlobalAdmin ||
+    ["SUPERVISOR", "GERENTE", "ADMINISTRADOR"].includes(session?.rol ?? "");
+
   const activeSucursalId = session?.isGlobalAdmin
     ? getSucursalActiva()
     : session?.sucursalId;
@@ -1030,6 +1049,39 @@ export const OrdersList = () => {
       }
     },
     [fetchOrders, onClose],
+  );
+
+  const handleLiberarOrder = useCallback(
+    async (orderId: string) => {
+      try {
+        const response = await fetch(`${getApiBaseUrl()}/orders/liberar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: [orderId] }),
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            await mensajeDeError(response, "No se pudo liberar el pedido"),
+          );
+        }
+
+        void fetchOrders(true);
+        addToast({
+          title: "Pedido liberado",
+          description: "Ya lo ve facturación.",
+          color: "success",
+        });
+      } catch (err) {
+        addToast({
+          title: "No se liberó",
+          description:
+            err instanceof Error ? err.message : "No se pudo liberar el pedido",
+          color: "danger",
+        });
+      }
+    },
+    [fetchOrders],
   );
 
   const handleDeleteOrder = useCallback(
@@ -1815,6 +1867,16 @@ export const OrdersList = () => {
                           Archivado
                         </Chip>
                       )}
+                      {estaRetenido(order) && (
+                        <Chip
+                          className="sm:-translate-y-7"
+                          color="warning"
+                          size="sm"
+                          variant="flat"
+                        >
+                          Retenido hasta {horaEnCuba(order.visibleDesde!)}
+                        </Chip>
+                      )}
                       {chipDeFactura(order) && (
                           <Tooltip
                             content={
@@ -1984,6 +2046,20 @@ export const OrdersList = () => {
                           <Icons.eye className="size-6" />
                         </Button>
                       </Tooltip>
+                      {puedeLiberar && estaRetenido(order) && (
+                        <Tooltip content="Liberar ahora">
+                          <Button
+                            aria-label="Liberar ahora"
+                            className="p-0"
+                            color="warning"
+                            isIconOnly={true}
+                            variant="flat"
+                            onPress={() => handleLiberarOrder(order.id)}
+                          >
+                            <Icons.checkDouble className="size-6" />
+                          </Button>
+                        </Tooltip>
+                      )}
                       {puedeCompletar && order.estado === "en_proceso" && (
                         <Tooltip content="Completar Pedido">
                           <Button

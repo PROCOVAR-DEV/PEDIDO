@@ -35,6 +35,9 @@ import { cambioDeLinea, cambiosDeCabecera, type Cambio } from '../lib/cambiosDeP
 import { mintSseTicket, consumeSseTicket } from '../lib/sseTickets';
 import { ingestaAuth } from '../middleware/ingestaAuth';
 import { ENTREGAS_DE_FACTURA } from '../lib/estadoEntrega';
+import { soloVisibles, visibleDesde } from '../lib/liberacionPedidos';
+import { puedeReasignar } from '../lib/reasignarCliente';
+import { reglaDeSucursal } from '../lib/liberacionRegla';
 
 
 const router = Router();
@@ -481,6 +484,9 @@ router.get('/', async (req, res) => {
       }
     }
 
+    // Facturación (Operador) no ve lo que la liberación por hora aún retiene.
+    if (getRequesterContext(req).ocultaRetenidos) conditions.push(soloVisibles());
+
     // Combine all conditions with AND
     if (conditions.length > 0) {
       where.AND = conditions;
@@ -592,6 +598,61 @@ router.get('/productos', async (req, res) => {
   }
 });
 
+/**
+ * «Liberar ahora»: hace visible un pedido retenido por la liberación por hora antes de su hora.
+ * Supervisor y superiores, y solo de las sucursales a las que alcanza el usuario.
+ */
+router.post('/liberar', async (req, res) => {
+  try {
+    const ctx = getRequesterContext(req);
+
+    if (!ctx.sesionValida) return res.status(401).json({ error: SESION_CADUCADA });
+    if (!puedeReasignar(ctx.role, ctx.isGlobalAdmin)) {
+      return res.status(403).json({ error: 'Solo un Supervisor o un rol superior puede liberar pedidos.' });
+    }
+
+    const ids: string[] = Array.isArray(req.body?.ids)
+      ? [...new Set<string>(req.body.ids.filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()))]
+      : [];
+
+    if (ids.length === 0) return res.status(400).json({ error: 'No hay pedidos elegidos.' });
+    if (ids.length > 500) return res.status(400).json({ error: 'Son demasiados de una vez (máximo 500).' });
+
+    const { where, error: sucursalError } = alcancePedido(req);
+
+    if (sucursalError || !where) return res.status(400).json({ error: sucursalError });
+
+    const ahora = new Date();
+    const retenidos = await prisma.pedido.findMany({
+      where: { ...where, id: { in: ids }, visibleDesde: { gt: ahora } },
+      select: { id: true, visibleDesde: true },
+    });
+
+    if (retenidos.length === 0) return res.json({ liberados: 0 });
+
+    await prisma.pedido.updateMany({
+      where: { id: { in: retenidos.map((p) => p.id) } },
+      data: { visibleDesde: ahora },
+    });
+    await anotarHistorial(
+      { origen: 'pantalla', por: ctx.username ?? null },
+      retenidos.map((p) => ({
+        pedidoId: p.id,
+        tipo: 'editado' as const,
+        campo: 'visibleDesde',
+        antes: p.visibleDesde?.toISOString() ?? null,
+        despues: ahora.toISOString(),
+        nota: 'Liberado antes de hora',
+      })),
+    );
+
+    return res.json({ liberados: retenidos.length });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'No se pudieron liberar los pedidos.' });
+  }
+});
+
 router.post('/sse-ticket', async (req, res) => {
   const { sucursalId, error } = resolveSucursalFilter(req);
 
@@ -625,6 +686,7 @@ router.post('/', async (req, res) => {
 
     const { folio, sellerId, clientId, direccion, encargado, telefono, fecha, fecha_comprometida, items } = req.body;
 
+    const fechaPedido = fecha ? new Date(fecha) : new Date();
     const order = await prisma.pedido.create({
       data: {
         folio: folio?.toUpperCase() || '',
@@ -634,7 +696,8 @@ router.post('/', async (req, res) => {
         direccion: direccion || null,
         encargado: encargado?.toUpperCase() || null,
         telefono: telefono || null,
-        fecha: fecha ? new Date(fecha) : new Date(),
+        fecha: fechaPedido,
+        visibleDesde: visibleDesde(fechaPedido, new Date(), await reglaDeSucursal(sucursalId)),
         fecha_comprometida: fecha_comprometida ? new Date(fecha_comprometida) : null,
         estado: 'en_proceso',
         items: {
@@ -2827,6 +2890,7 @@ async function processOrderRecord(
         encargado: record.order.encargado,
         telefono: record.order.telefono,
         fecha: record.order.fecha,
+        visibleDesde: visibleDesde(record.order.fecha, new Date(), await reglaDeSucursal(sucursalId)),
         fecha_comprometida: record.order.fecha_comprometida,
         estado: 'en_proceso',
         pedido_cobrado: record.order.pedido_cobrado ?? null,

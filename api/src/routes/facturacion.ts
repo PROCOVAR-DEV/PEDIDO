@@ -4,6 +4,7 @@ import prisma from '../prismaClient';
 import { estadoDeFactura, HORA_CORTE, type EstadoFactura } from '../lib/corteFacturacion';
 import { leerUltimaPasada } from '../lib/cotejoEstado';
 import { extremosDelDia, hoyEnCuba } from '../lib/diaCubano';
+import { soloVisibles } from '../lib/liberacionPedidos';
 import { getRequesterContext, resolveSucursalFilter } from '../lib/sucursalContext';
 
 /**
@@ -78,6 +79,8 @@ router.get('/resumen', async (req, res) => {
     where: {
       fecha: { gte: rango.desde, lte: rango.hasta },
       ...(sucursalId ? { sucursalId } : {}),
+      // Lo retenido por la liberación por hora aún no cuenta: no se puede facturar.
+      ...soloVisibles(),
     },
     select: {
       fecha: true,
@@ -177,9 +180,11 @@ router.get('/pedidos', async (req, res) => {
           ],
         }
       : {}),
-    ...(q
-      ? {
-          AND: [
+    // Lo retenido por la liberación por hora aún no cuenta: no se puede facturar.
+    AND: [
+      soloVisibles(),
+      ...(q
+        ? [
             {
               OR: [
                 { folio: { contains: q, mode: 'insensitive' as const } },
@@ -188,9 +193,9 @@ router.get('/pedidos', async (req, res) => {
                 { vendedor: { nombre: { contains: q, mode: 'insensitive' as const } } },
               ],
             },
-          ],
-        }
-      : {}),
+          ]
+        : []),
+    ],
   };
 
   const filas = await prisma.pedido.findMany({

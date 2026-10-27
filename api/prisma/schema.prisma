@@ -16,6 +16,11 @@ model Sucursal {
   clientes   Cliente[]
   pedidos    Pedido[]
   productos  ProductoSucursal[]
+  /// Liberación de pedidos por hora (ver lib/liberacionPedidos.ts). Apagada por defecto.
+  /// Las horas son minutos del día en Cuba: 510 = 8:30, 900 = 15:00.
+  liberacionActiva    Boolean @default(false)
+  liberacionAyerHasta Int     @default(510)
+  liberacionHoyDesde  Int     @default(900)
 }
 
 /// El catálogo de Ventra, copiado aquí por sucursal.
@@ -305,8 +310,11 @@ model Pedido {
   entregasDeFactura  EntregaDeFactura[]
   copias             CopiaPortapapeles[]
   domicilioGrupos    PedidoDomicilioGrupo[]
+  /// Retenido hasta este instante: facturación no lo ve antes. Nulo = visible ya.
+  visibleDesde       DateTime?
 
   @@unique([sucursalId, folio, vendedorId])
+  @@index([visibleDesde])
   @@index([fecha])
   @@index([archivedAt])
   // La sincronización incremental filtra por esto en cada llamada de cada tablet.

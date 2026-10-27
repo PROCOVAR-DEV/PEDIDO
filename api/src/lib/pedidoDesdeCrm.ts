@@ -20,6 +20,8 @@
  */
 import { Prisma } from '@prisma/client';
 import { nombreComparable, codigoComparable } from './nombreVendedor';
+import { visibleDesde } from './liberacionPedidos';
+import { reglaDeSucursal } from './liberacionRegla';
 
 /**
  * Prisma, tarde: `prismaClient` abre la conexión al cargarse, y las pruebas de la validación
@@ -228,6 +230,7 @@ export async function recibirPedidoCrm(p: PedidoCrm): Promise<Recepcion> {
         telefono: p.cliente.telefono,
         // Mediodía UTC: el día del pedido no puede cambiar al pasarlo a la hora de Cuba.
         fecha: new Date(`${p.fecha}T12:00:00Z`),
+        visibleDesde: visibleDesde(new Date(`${p.fecha}T12:00:00Z`), new Date(), await reglaDeSucursal(sucursal.id)),
         fecha_comprometida: p.fechaComprometida ? new Date(`${p.fechaComprometida}T12:00:00Z`) : null,
         estado: 'en_proceso',
         requiere_domicilio: d.requiere,

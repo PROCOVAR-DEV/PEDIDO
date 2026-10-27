@@ -55,6 +55,8 @@ interface RequesterContext {
    * cualquiera que tuviera sesión. Esconder un botón no es un permiso.
    */
   puedeBorrarPedidos: boolean;
+  /** Facturación (Operador): no ve lo retenido por la liberación por hora. */
+  ocultaRetenidos: boolean;
   /**
    * ¿VENÍA UNA SESIÓN VÁLIDA? Es otra pregunta que «qué puede hacer».
    *
@@ -169,6 +171,7 @@ export function getRequesterContext(req: Request): RequesterContext {
       // La API key es de LECTURA (el middleware solo la acepta en GET/HEAD).
       puedeCompletarPedidos: false,
       puedeBorrarPedidos: false,
+      ocultaRetenidos: false,
       // La clave de servicio ES una identidad válida: lo que no tiene son estos permisos.
       sesionValida: true,
     };
@@ -240,6 +243,9 @@ export function getRequesterContext(req: Request): RequesterContext {
     puedeImportarYReportar,
     puedeCompletarPedidos,
     puedeBorrarPedidos,
+    // El Operador es facturación: no ve lo retenido por la liberación por hora (ver
+    // lib/liberacionPedidos.ts). El resto de roles lo ve, marcado como retenido.
+    ocultaRetenidos: role === 'OPERADOR',
     // Hubo token y se pudo verificar. Ver el comentario del campo.
     sesionValida: !!payload,
   };
