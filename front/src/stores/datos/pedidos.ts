@@ -1,3 +1,5 @@
+import type { EntregaDeFactura } from "../../lib/entregas-de-factura";
+
 import { crearStoreDatos } from "../crearStoreDatos";
 
 // Tipos del listado de pedidos. Viven aquí (no en la vista) porque los comparten
@@ -105,6 +107,8 @@ export interface Order {
   estadoEntrega?: string | null;
   estadoEntregaAt?: string | null;
   estadoEntregaNota?: string | null;
+  /** El estado de cada factura del pedido (la más reciente primero). Vacío si Reparto no ha avisado por factura. */
+  entregasDeFactura?: EntregaDeFactura[];
   /** Lo que la factura cobró por el reparto, si trae la línea de «ENTREGA A DOMICILIO». */
   facturaDomicilio?: number | null;
   createdAt: string;

@@ -24,6 +24,16 @@ export const ESTADOS_ENTREGA = new Set(['despachado', 'en_transito', 'entregado'
 
 export const TOPE_POR_LLAMADA = 500;
 
+/**
+ * Lo que la lista y el detalle del pedido piden de `EntregaDeFactura`: una fila por factura,
+ * la más reciente primero (empate: la de número mayor, como `derivarEstadoDelPedido`).
+ * Es un `include` de la misma consulta, no una consulta por fila.
+ */
+export const ENTREGAS_DE_FACTURA = {
+  select: { factura: true, puntoDeVenta: true, estado: true, at: true, nota: true },
+  orderBy: [{ at: 'desc' as const }, { factura: 'desc' as const }],
+};
+
 export interface EstadoQueLlega {
   /** El id interno. Si viene, manda: es el camino de siempre. */
   pedidoId?: string;

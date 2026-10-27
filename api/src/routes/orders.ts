@@ -34,6 +34,7 @@ import { anotarHistorial, type ContextoHistorial } from '../lib/historialPedido'
 import { cambioDeLinea, cambiosDeCabecera, type Cambio } from '../lib/cambiosDePedido';
 import { mintSseTicket, consumeSseTicket } from '../lib/sseTickets';
 import { ingestaAuth } from '../middleware/ingestaAuth';
+import { ENTREGAS_DE_FACTURA } from '../lib/estadoEntrega';
 
 
 const router = Router();
@@ -168,7 +169,7 @@ export async function conPrecios<T extends PedidoConLineas>(pedido: T) {
 export async function pedidoParaLista(id: string) {
   const o = await prisma.pedido.findUnique({
     where: { id },
-    include: { items: true, cliente: true, vendedor: true },
+    include: { items: true, cliente: true, vendedor: true, entregasDeFactura: ENTREGAS_DE_FACTURA },
   });
   if (!o) return null;
 
@@ -494,7 +495,8 @@ router.get('/', async (req, res) => {
       include: { 
         items: true, 
         cliente: true, 
-        vendedor: true 
+        vendedor: true,
+        entregasDeFactura: ENTREGAS_DE_FACTURA,
       },
       /**
        * TRES CRITERIOS, Y EL ULTIMO ES UNICO.

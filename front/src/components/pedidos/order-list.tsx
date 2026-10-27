@@ -37,6 +37,7 @@ import { usePantallaChica } from "../../hooks/pantalla";
 import { cards } from "../primitives";
 import Icons from "../icons/iconify";
 import { VendedorSelect } from "../vendedor-select";
+import { contadorDeFacturas, lineasDeEntrega } from "../../lib/entregas-de-factura";
 
 import { cn, copyTextToClipboard } from "@/lib/utils";
 import { registrarCopia } from "@/lib/registrar-copia";
@@ -1838,8 +1839,19 @@ export const OrdersList = () => {
                         entregaChip[order.estadoEntrega] && (
                           <Tooltip
                             content={
-                              order.estadoEntregaNota ||
-                              "Lo pone delivery según va la ruta"
+                              order.entregasDeFactura?.length ? (
+                                <div className="flex flex-col gap-1 py-0.5">
+                                  {lineasDeEntrega(order.entregasDeFactura).map((l) => (
+                                    <div key={l.clave}>
+                                      <div>{l.texto}</div>
+                                      {l.nota && <div className="text-default-500">{l.nota}</div>}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                order.estadoEntregaNota ||
+                                "Lo pone delivery según va la ruta"
+                              )
                             }
                           >
                             <Chip
@@ -1849,6 +1861,8 @@ export const OrdersList = () => {
                               variant="flat"
                             >
                               {entregaChip[order.estadoEntrega].texto}
+                              {contadorDeFacturas(order.entregasDeFactura) &&
+                                ` · ${contadorDeFacturas(order.entregasDeFactura)}`}
                             </Chip>
                           </Tooltip>
                         )}
