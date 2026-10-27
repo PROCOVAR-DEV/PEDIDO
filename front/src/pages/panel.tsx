@@ -236,7 +236,7 @@ export default function PanelPage() {
           valor: nRetenidos,
           etiqueta: nRetenidos === 1 ? "pedido retenido" : "pedidos retenidos",
         },
-        title: "Liberación de pedidos",
+        title: "Liberación",
       },
     },
     {
