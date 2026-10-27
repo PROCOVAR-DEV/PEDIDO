@@ -102,6 +102,7 @@ function Fila({
   cargando,
   href,
   aria,
+  apilada = false,
 }: {
   etiqueta: string;
   valor: number;
@@ -109,6 +110,8 @@ function Fila({
   cargando: boolean;
   href?: string;
   aria?: string;
+  /** Etiqueta encima y cifra debajo: para filas de tres celdas, donde no cabe en una línea. */
+  apilada?: boolean;
 }) {
   const dentro = (
     <>
@@ -120,14 +123,21 @@ function Fila({
           <span className="block h-5 w-8" />
         </Skeleton>
       ) : (
-        <span className={cn("text-lg font-medium tabular-nums", TONOS[tono])}>
+        <span
+          className={cn(
+            "font-medium tabular-nums",
+            apilada ? "text-2xl leading-tight" : "text-lg",
+            TONOS[tono],
+          )}
+        >
           {valor}
         </span>
       )}
     </>
   );
-  const caja =
-    "flex w-full items-baseline justify-between gap-3 rounded-md px-2 py-2.5";
+  const caja = apilada
+    ? "flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-2.5"
+    : "flex w-full items-baseline justify-between gap-3 rounded-md px-2 py-2.5";
 
   return (
     <div className="border-b border-divider" role="listitem">
@@ -476,6 +486,11 @@ export function Resumen({
   ).length;
   const esperando = cargando && !resumen;
   const pasada = resumen?.ultimaPasada;
+  // Sin «Buscando» a la vista (roles que no ven el cotejo), «Sin factura» lo incluye para que
+  // no se pierda ningún pedido: es el mismo hueco, y su enlace es el mismo.
+  const sinFactura = verCotejo
+    ? (t?.no_aparecio ?? 0)
+    : (t?.no_aparecio ?? 0) + (t?.buscando ?? 0);
 
   // Lo facturado hoy, repartido para que SUME: los de pedidos de hoy y los de días
   // anteriores (Camagüey, por ejemplo, factura al día siguiente). Si el api no manda el
@@ -569,34 +584,36 @@ export function Resumen({
                     facturaba nada. Es la única cifra grande. El bloque entero lleva a la
                     lista de esos pedidos (enlace estirado); las dos partes del desglose
                     son enlaces propios, por encima. */}
-                <div className="relative -mx-2 flex items-baseline gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-default-100 motion-reduce:transition-none">
-                  {esperando ? (
-                    <Skeleton className="rounded-lg">
-                      <span className="block h-9 w-14" />
-                    </Skeleton>
-                  ) : (
-                    <span className="text-4xl font-semibold leading-none tabular-nums text-success-600">
-                      {eseDia}
+                {verCotejo && (
+                  <div className="relative -mx-2 flex items-baseline gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-default-100 motion-reduce:transition-none">
+                    {esperando ? (
+                      <Skeleton className="rounded-lg">
+                        <span className="block h-9 w-14" />
+                      </Skeleton>
+                    ) : (
+                      <span className="text-4xl font-semibold leading-none tabular-nums text-success-600">
+                        {eseDia}
+                      </span>
+                    )}
+                    <span className="text-sm text-default-600">
+                      <Link
+                        aria-label={`Facturados hoy: ${eseDia}. Ver la lista`}
+                        className={cn(
+                          "text-sm text-default-600",
+                          ESTIRADO,
+                          "after:rounded-lg",
+                        )}
+                        href={`/panel/panel-pedidos?${new URLSearchParams({ facturadoDia: dia, incluirArchivados: "1" })}`}
+                        style={SIN_POSICION}
+                      >
+                        facturados hoy
+                      </Link>
+                      <span className="block text-xs text-default-500">
+                        {desgloseFacturados}
+                      </span>
                     </span>
-                  )}
-                  <span className="text-sm text-default-600">
-                    <Link
-                      aria-label={`Facturados hoy: ${eseDia}. Ver la lista`}
-                      className={cn(
-                        "text-sm text-default-600",
-                        ESTIRADO,
-                        "after:rounded-lg",
-                      )}
-                      href={`/panel/panel-pedidos?${new URLSearchParams({ facturadoDia: dia, incluirArchivados: "1" })}`}
-                      style={SIN_POSICION}
-                    >
-                      facturados hoy
-                    </Link>
-                    <span className="block text-xs text-default-500">
-                      {desgloseFacturados}
-                    </span>
-                  </span>
-                </div>
+                  </div>
+                )}
 
                 <div className="flex flex-col gap-1">
                   {esperando ? (
@@ -618,8 +635,15 @@ export function Resumen({
                       </strong>
                     </Link>
                   )}
-                  <div className="grid grid-cols-2 gap-x-6" role="list">
+                  <div
+                    className={cn(
+                      "grid gap-x-6",
+                      verCotejo ? "grid-cols-2" : "grid-cols-3 gap-x-4",
+                    )}
+                    role="list"
+                  >
                     <Fila
+                      apilada={!verCotejo}
                       aria={`Pedidos de hoy con factura: ${conFactura}. Ver la lista`}
                       cargando={esperando}
                       etiqueta="Con factura"
@@ -629,22 +653,27 @@ export function Resumen({
                     />
                     {/* Discreto: un pedido de hoy sin factura es lo normal, se factura mañana. */}
                     <Fila
-                      aria={`Pedidos de hoy sin factura: ${t?.no_aparecio ?? 0}. Ver la lista`}
+                      apilada={!verCotejo}
+                      aria={`Pedidos de hoy sin factura: ${sinFactura}. Ver la lista`}
                       cargando={esperando}
                       etiqueta="Sin factura"
                       href={enlaceLista(dia, F_SIN_FACTURA)}
-                      tono={t?.no_aparecio ? "base" : "suave"}
-                      valor={t?.no_aparecio ?? 0}
+                      tono={sinFactura ? "base" : "suave"}
+                      valor={sinFactura}
                     />
+                    {/* «Buscando» es del cotejo: sólo lo ven los administradores. */}
+                    {verCotejo && (
+                      <Fila
+                        aria={`Pedidos de hoy buscando factura: ${t?.buscando ?? 0}. Ver la lista`}
+                        cargando={esperando}
+                        etiqueta="Buscando factura"
+                        href={enlaceLista(dia, F_SIN_FACTURA)}
+                        tono={t?.buscando ? "base" : "suave"}
+                        valor={t?.buscando ?? 0}
+                      />
+                    )}
                     <Fila
-                      aria={`Pedidos de hoy buscando factura: ${t?.buscando ?? 0}. Ver la lista`}
-                      cargando={esperando}
-                      etiqueta="Buscando factura"
-                      href={enlaceLista(dia, F_SIN_FACTURA)}
-                      tono={t?.buscando ? "base" : "suave"}
-                      valor={t?.buscando ?? 0}
-                    />
-                    <Fila
+                      apilada={!verCotejo}
                       aria={`Pedidos de hoy sin completar: ${t?.sin_completar ?? 0}. Ver la lista`}
                       cargando={esperando}
                       etiqueta="Sin completar"
