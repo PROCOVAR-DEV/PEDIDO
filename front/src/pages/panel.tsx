@@ -97,10 +97,11 @@ const CAPACIDADES: Record<string, readonly Bloque[]> = {
   GERENTE: SUCURSAL_ENTERA.filter(
     (b) => !["vendedores", "importar", "reportes"].includes(b),
   ),
-  // Sólo lo suyo: sin informes ni facturación de la sucursal.
-  GESTOR: ["totales", "pedidos", "clientes", "perfil"],
-  // Factura: ve pedidos, vendedores y clientes de su sucursal; ni importa ni saca informes.
-  OPERADOR: ["totales", "pedidos", "vendedores", "clientes"],
+  // Sólo lo suyo, pero con el resumen diario y lo de ayer: el api le da solo las cifras de SUS vendedores.
+  GESTOR: ["hoy", "totales", "pedidos", "clientes", "perfil"],
+  // Factura: ve pedidos, vendedores y clientes de su sucursal; ni importa ni saca informes. El resumen
+  // diario y lo de ayer sí (solo las cifras de su sucursal), para ir directo a esos pedidos.
+  OPERADOR: ["hoy", "totales", "pedidos", "vendedores", "clientes"],
   ECONOMICA: RESTO,
   ANALISTA: RESTO,
   LOGISTICO: RESTO,
@@ -390,7 +391,7 @@ export default function PanelPage() {
 
       {/* 2. RESUMEN DIARIO (con el aviso de ayer) y evolución anual, a la misma altura. */}
       {ve.has("hoy") ? (
-        <div className="grid grid-cols-1 gap-4 xl:min-h-0 xl:grid-cols-12">
+        <div className="grid grid-cols-1 gap-4 xl:max-h-[600px] xl:min-h-0 xl:grid-cols-12">
           <div
             className={cn(
               "flex min-h-0 flex-col",

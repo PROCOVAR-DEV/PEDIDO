@@ -47,6 +47,11 @@ const router = Router();
  * Se comprueba una vez para todo el router, para que una ruta nueva nazca protegida.
  */
 router.use((req, res, next) => {
+  // El RESUMEN del día es la excepción: lo ven también el Operador y el Gestor, que son quienes
+  // suben y facturan los pedidos y necesitan saber qué hay hoy y qué quedó de ayer. Solo sus cifras:
+  // las de SU sucursal (y el Gestor, solo las de SUS vendedores), sin el desglose de las demás.
+  if (req.method === 'GET' && req.path === '/resumen') return next();
+
   if (!getRequesterContext(req).puedeImportarYReportar) {
     return res.status(403).json({ error: 'Tu usuario no puede ver el estado de la facturación.' });
   }
@@ -75,10 +80,15 @@ router.get('/resumen', async (req, res) => {
 
   if (!rango) return res.status(400).json({ error: 'La fecha tiene que ser AAAA-MM-DD.' });
 
+  // El Gestor ve SOLO los pedidos de sus vendedores, como en el resto de la aplicación.
+  const quien = getRequesterContext(req);
+  const soloSuyos = quien.isGestor && quien.userId ? { vendedor: { gestorId: quien.userId } } : {};
+
   const pedidos = await prisma.pedido.findMany({
     where: {
       fecha: { gte: rango.desde, lte: rango.hasta },
       ...(sucursalId ? { sucursalId } : {}),
+      ...soloSuyos,
       // Lo retenido por la liberación por hora aún no cuenta: no se puede facturar.
       ...soloVisibles(),
     },
@@ -103,6 +113,7 @@ router.get('/resumen', async (req, res) => {
       facturaAt: { gte: rango.desde, lte: rango.hasta },
       facturaEstado: { in: ['igual', 'cambiado'] },
       ...(sucursalId ? { sucursalId } : {}),
+      ...soloSuyos,
     },
   });
 
@@ -129,14 +140,18 @@ router.get('/resumen', async (req, res) => {
     totales[est]++;
   }
 
+  const limitado = quien.isGestor || !quien.puedeImportarYReportar;
+  const ultima = await leerUltimaPasada();
+
   return res.json({
     dia,
     hoy: hoyEnCuba(),
     horaCorte: HORA_CORTE,
     facturadosEseDia,
     totales,
-    sucursales: [...porSucursal.values()].sort((a, b) => b.total - a.total),
-    ultimaPasada: await leerUltimaPasada(),
+    // Quien no es de control (Operador, Gestor) no recibe el desglose ni los errores de las demás sucursales.
+    sucursales: limitado ? [] : [...porSucursal.values()].sort((a, b) => b.total - a.total),
+    ultimaPasada: limitado && ultima ? { ...ultima, sucursales: [] } : ultima,
   });
 });
 

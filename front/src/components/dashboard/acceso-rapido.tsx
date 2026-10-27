@@ -60,14 +60,14 @@ export function AccesoRapido({
       >
         {Icono && <Icono aria-hidden className="size-6" />}
       </span>
-      <span className={cn("flex min-w-0 flex-col", conInsignia && "pr-9")}>
+      <span className="flex min-w-0 flex-col">
         <span className="text-base font-semibold leading-tight">{title}</span>
         <span className="line-clamp-2 text-xs text-default-500">
           {description}
         </span>
       </span>
       {conInsignia && (
-        <span className="absolute right-2.5 top-2.5 min-w-6 rounded-full bg-warning px-2 py-0.5 text-center text-xs font-semibold tabular-nums text-warning-foreground">
+        <span className="ml-auto grid h-6 min-w-6 shrink-0 place-items-center self-center rounded-full bg-warning px-1.5 text-xs font-semibold leading-none tabular-nums text-warning-foreground">
           {insignia!.valor}
           <span className="sr-only"> {insignia!.etiqueta}</span>
         </span>
@@ -128,7 +128,7 @@ export function AccesoPrincipal({
       {hayDato && (
         <span
           className={cn(
-            "ml-auto flex items-baseline gap-2 text-right",
+            "ml-auto flex items-baseline gap-2 whitespace-nowrap text-right",
             alto && "xl:ml-0 xl:text-left",
           )}
         >

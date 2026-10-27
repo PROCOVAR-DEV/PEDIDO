@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { ResumenHoy } from "./use-hoy";
 
-import { Button, Link, Skeleton } from "@heroui/react";
+import { Button, Card, CardBody, Link, Skeleton } from "@heroui/react";
 
 import { cn } from "@/lib/utils";
 
@@ -77,7 +77,7 @@ const F_SIN_COMPLETAR = {
 const F_PENDIENTES = { factura: "sin_factura,sin_cotejar" };
 
 const ENLACE_FILA =
-  "text-base font-medium tabular-nums outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-focus";
+  "text-lg font-medium tabular-nums outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-focus";
 
 /**
  * Una línea del resumen: la etiqueta a la izquierda, la cifra a la derecha, misma línea
@@ -99,7 +99,7 @@ function Fila({
   aria?: string;
 }) {
   return (
-    <div className="relative flex items-baseline justify-between gap-3 border-b border-divider py-1 hover:bg-default-50">
+    <div className="relative flex items-baseline justify-between gap-3 border-b border-divider py-2 hover:bg-default-50">
       <dt className="text-sm text-default-600">{etiqueta}</dt>
       <dd>
         {cargando ? (
@@ -115,9 +115,7 @@ function Fila({
             {valor}
           </Link>
         ) : (
-          <span
-            className={cn("text-base font-medium tabular-nums", TONOS[tono])}
-          >
+          <span className={cn("text-lg font-medium tabular-nums", TONOS[tono])}>
             {valor}
           </span>
         )}
@@ -380,154 +378,160 @@ export function Resumen({
   const pasada = resumen?.ultimaPasada;
 
   return (
-    <section
+    <Card
       aria-label="Resumen diario"
-      className={cn(
-        "flex min-h-0 flex-col gap-3 overflow-y-clip",
-        !verResumen && "justify-center",
-      )}
+      className="min-h-0 flex-1"
+      role="region"
+      shadow="none"
     >
-      {verResumen && (
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4">
-            <h2 className="text-base font-semibold">
-              Resumen diario
-              <span className="ml-2 text-sm font-normal text-default-500">
-                {fechaLarga(dia)}
-              </span>
-            </h2>
-            {pasada && (
-              <span className="text-xs text-default-500">
-                Facturas comprobadas {haceCuanto(pasada.cuando)}
-              </span>
-            )}
-          </div>
+      <CardBody
+        className={cn(
+          "min-h-0 flex-col justify-between gap-3 overflow-y-clip border border-divider p-4",
+          !verResumen && "justify-center",
+        )}
+      >
+        {verResumen && (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+              <h2 className="text-base font-semibold">
+                Resumen diario
+                <span className="ml-2 text-sm font-normal text-default-500">
+                  {fechaLarga(dia)}
+                </span>
+              </h2>
+              {pasada && (
+                <span className="text-xs text-default-500">
+                  Facturas comprobadas {haceCuanto(pasada.cuando)}
+                </span>
+              )}
+            </div>
 
-          {error && !resumen ? (
-            <p className="flex flex-wrap items-center gap-2 text-sm text-default-600">
-              No se pudo cargar el resumen diario ({error}). Comprueba la
-              conexión y vuelve a intentarlo.
-              <Button size="sm" variant="flat" onPress={onReintentar}>
-                Reintentar
-              </Button>
-            </p>
-          ) : (
-            <>
-              {/* Lo que se facturó hoy, de cualquier día: Camagüey, por ejemplo, factura
+            {error && !resumen ? (
+              <p className="flex flex-wrap items-center gap-2 text-sm text-default-600">
+                No se pudo cargar el resumen diario ({error}). Comprueba la
+                conexión y vuelve a intentarlo.
+                <Button size="sm" variant="flat" onPress={onReintentar}>
+                  Reintentar
+                </Button>
+              </p>
+            ) : (
+              <>
+                {/* Lo que se facturó hoy, de cualquier día: Camagüey, por ejemplo, factura
                   el día siguiente, y contar sólo los pedidos de hoy parecía que no se
                   facturaba nada. Es la única cifra grande del resumen. */}
-              <div className="flex items-baseline gap-3">
-                {esperando ? (
-                  <Skeleton className="rounded-lg">
-                    <span className="block h-9 w-14" />
-                  </Skeleton>
-                ) : (
-                  <span className="text-4xl font-semibold leading-none tabular-nums text-success-600">
-                    {resumen?.facturadosEseDia ?? 0}
+                <div className="flex items-baseline gap-3">
+                  {esperando ? (
+                    <Skeleton className="rounded-lg">
+                      <span className="block h-9 w-14" />
+                    </Skeleton>
+                  ) : (
+                    <span className="text-4xl font-semibold leading-none tabular-nums text-success-600">
+                      {resumen?.facturadosEseDia ?? 0}
+                    </span>
+                  )}
+                  <span className="text-sm text-default-600">
+                    facturados hoy
+                    <span className="block text-xs text-default-500">
+                      pedidos que recibieron factura hoy, de cualquier día
+                      {enlaceFacturacion && (
+                        <>
+                          {" "}
+                          <Link
+                            className="text-xs"
+                            href="/panel/sincronizacion/facturacion"
+                          >
+                            Ver facturación
+                          </Link>
+                        </>
+                      )}
+                    </span>
                   </span>
+                </div>
+
+                <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+                  <Fila
+                    aria={`Pedidos de hoy: ${t?.total ?? 0}. Ver los pedidos`}
+                    cargando={esperando}
+                    etiqueta="Pedidos de hoy"
+                    href={enlaceLista(dia)}
+                    valor={t?.total ?? 0}
+                  />
+                  <Fila
+                    aria={`De los pedidos de hoy, ${conFactura} con factura. Ver los pedidos`}
+                    cargando={esperando}
+                    etiqueta="De ellos, con factura"
+                    href={enlaceLista(dia, F_CON_FACTURA)}
+                    tono={conFactura ? "ok" : "suave"}
+                    valor={conFactura}
+                  />
+                  <Fila
+                    aria={`${t?.buscando ?? 0} pedidos de hoy buscando factura. Ver los pedidos`}
+                    cargando={esperando}
+                    etiqueta="Buscando factura"
+                    href={enlaceLista(dia, F_SIN_FACTURA)}
+                    tono={t?.buscando ? "base" : "suave"}
+                    valor={t?.buscando ?? 0}
+                  />
+                  {/* Discreto: un pedido de hoy sin factura es lo normal, se factura mañana. */}
+                  <Fila
+                    aria={`${t?.no_aparecio ?? 0} pedidos de hoy sin factura. Ver los pedidos`}
+                    cargando={esperando}
+                    etiqueta="Sin factura"
+                    href={enlaceLista(dia, F_SIN_FACTURA)}
+                    tono={t?.no_aparecio ? "base" : "suave"}
+                    valor={t?.no_aparecio ?? 0}
+                  />
+                  <Fila
+                    aria={`${t?.sin_completar ?? 0} pedidos de hoy sin completar. Ver los pedidos`}
+                    cargando={esperando}
+                    etiqueta="Sin completar"
+                    href={enlaceLista(dia, F_SIN_COMPLETAR)}
+                    tono={t?.sin_completar ? "base" : "suave"}
+                    valor={t?.sin_completar ?? 0}
+                  />
+                </dl>
+
+                {!esperando && t?.total === 0 && (
+                  <p className="text-sm text-default-500">
+                    Hoy todavía no ha entrado ningún pedido.
+                  </p>
                 )}
-                <span className="text-sm text-default-600">
-                  facturados hoy
-                  <span className="block text-xs text-default-500">
-                    pedidos que recibieron factura hoy, de cualquier día
-                    {enlaceFacturacion && (
-                      <>
-                        {" "}
-                        <Link
-                          className="text-xs"
-                          href="/panel/sincronizacion/facturacion"
-                        >
-                          Ver facturación
-                        </Link>
-                      </>
-                    )}
-                  </span>
-                </span>
-              </div>
+                {!esperando && resumen && !pasada && (
+                  <p className="text-xs text-default-500">
+                    Aún no hay una comprobación de facturas reciente.
+                  </p>
+                )}
+                {conError > 0 && (
+                  <p className="text-xs text-warning-600">
+                    {conError}{" "}
+                    {conError === 1 ? "sucursal dio" : "sucursales dieron"}{" "}
+                    error en la última comprobación.{" "}
+                    <Link
+                      className="text-xs"
+                      href="/panel/sincronizacion/facturacion"
+                    >
+                      Ver detalle
+                    </Link>
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
-              <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
-                <Fila
-                  aria={`Pedidos de hoy: ${t?.total ?? 0}. Ver los pedidos`}
-                  cargando={esperando}
-                  etiqueta="Pedidos de hoy"
-                  href={enlaceLista(dia)}
-                  valor={t?.total ?? 0}
-                />
-                <Fila
-                  aria={`De los pedidos de hoy, ${conFactura} con factura. Ver los pedidos`}
-                  cargando={esperando}
-                  etiqueta="De ellos, con factura"
-                  href={enlaceLista(dia, F_CON_FACTURA)}
-                  tono={conFactura ? "ok" : "suave"}
-                  valor={conFactura}
-                />
-                <Fila
-                  aria={`${t?.buscando ?? 0} pedidos de hoy buscando factura. Ver los pedidos`}
-                  cargando={esperando}
-                  etiqueta="Buscando factura"
-                  href={enlaceLista(dia, F_SIN_FACTURA)}
-                  tono={t?.buscando ? "base" : "suave"}
-                  valor={t?.buscando ?? 0}
-                />
-                {/* Discreto: un pedido de hoy sin factura es lo normal, se factura mañana. */}
-                <Fila
-                  aria={`${t?.no_aparecio ?? 0} pedidos de hoy sin factura. Ver los pedidos`}
-                  cargando={esperando}
-                  etiqueta="Sin factura"
-                  href={enlaceLista(dia, F_SIN_FACTURA)}
-                  tono={t?.no_aparecio ? "base" : "suave"}
-                  valor={t?.no_aparecio ?? 0}
-                />
-                <Fila
-                  aria={`${t?.sin_completar ?? 0} pedidos de hoy sin completar. Ver los pedidos`}
-                  cargando={esperando}
-                  etiqueta="Sin completar"
-                  href={enlaceLista(dia, F_SIN_COMPLETAR)}
-                  tono={t?.sin_completar ? "base" : "suave"}
-                  valor={t?.sin_completar ?? 0}
-                />
-              </dl>
+        {entre}
 
-              {!esperando && t?.total === 0 && (
-                <p className="text-sm text-default-500">
-                  Hoy todavía no ha entrado ningún pedido.
-                </p>
-              )}
-              {!esperando && resumen && !pasada && (
-                <p className="text-xs text-default-500">
-                  Aún no hay una comprobación de facturas reciente.
-                </p>
-              )}
-              {conError > 0 && (
-                <p className="text-xs text-warning-600">
-                  {conError}{" "}
-                  {conError === 1 ? "sucursal dio" : "sucursales dieron"} error
-                  en la última comprobación.{" "}
-                  <Link
-                    className="text-xs"
-                    href="/panel/sincronizacion/facturacion"
-                  >
-                    Ver detalle
-                  </Link>
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {entre}
-
-      {verTotales && (
-        <BloqueTotales
-          cargandoTotales={cargandoTotales}
-          errorTotales={errorTotales}
-          ocultableEnBajo={verResumen}
-          titulo={tituloTotales}
-          totales={totales}
-          onReintentar={onReintentarTotales}
-        />
-      )}
-    </section>
+        {verTotales && (
+          <BloqueTotales
+            cargandoTotales={cargandoTotales}
+            errorTotales={errorTotales}
+            ocultableEnBajo={verResumen}
+            titulo={tituloTotales}
+            totales={totales}
+            onReintentar={onReintentarTotales}
+          />
+        )}
+      </CardBody>
+    </Card>
   );
 }
