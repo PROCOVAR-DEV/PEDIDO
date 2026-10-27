@@ -2981,8 +2981,10 @@ router.get('/stats', async (req, res) => {
     const year = req.query.year ? parseInt(req.query.year as string) : null;
 
     // Condición de año si se especifica
+    // Por la fecha del PEDIDO (el día en que se hizo), no por la comprometida: un pedido de
+    // octubre prometido para noviembre contaba en noviembre y el panel enseñaba un mes futuro.
     const yearCondition = year ? {
-      fecha_comprometida: {
+      fecha: {
         gte: new Date(year, 0, 1), // 1 de enero del año
         lt: new Date(year + 1, 0, 1) // 1 de enero del siguiente año
       }
@@ -2997,7 +2999,6 @@ router.get('/stats', async (req, res) => {
     // solo para contarlos por mes con un bucle. Ahora lo agrupa Postgres y vuelven
     // ~24 filas.
     const filtroMensual = [
-      Prisma.sql`o.fecha_comprometida is not null`,
       sucursalId ? Prisma.sql`o."sucursalId" = ${sucursalId}` : Prisma.sql`true`,
       statsCtx.isGestor && statsCtx.userId
         ? Prisma.sql`exists (select 1 from "Seller" s where s.id = o."sellerId" and s."gestorId" = ${statsCtx.userId})`
@@ -3044,8 +3045,8 @@ router.get('/stats', async (req, res) => {
         // que JSON.stringify no sabe serializar: se castean a int aquí.
         prisma.$queryRaw<Array<{ year: number; month: number; total: number; completed: number }>>(
           Prisma.sql`
-            select extract(year  from o.fecha_comprometida)::int as year,
-                   extract(month from o.fecha_comprometida)::int as month,
+            select extract(year  from o.fecha)::int as year,
+                   extract(month from o.fecha)::int as month,
                    count(*)::int                                  as total,
                    count(*) filter (where o.status = 'completada')::int as completed
               from "Order" o

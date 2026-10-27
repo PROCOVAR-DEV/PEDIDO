@@ -147,7 +147,6 @@ export function LineChartCard() {
       promedio: conDatos.length ? Math.round(suma / conDatos.length) : 0,
       pico,
       hayAnterior: filas.some((f) => f.anterior != null),
-      totalAnterior: filas.reduce((a, f) => a + (f.anterior ?? 0), 0),
     };
   }, [monthlyStats, year]);
 
@@ -183,35 +182,39 @@ export function LineChartCard() {
   return (
     <Card className="h-full w-full" shadow="none">
       <CardBody className="min-h-0 flex-col gap-0 overflow-y-clip border border-divider p-0">
-        <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-divider px-4 py-1">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h2 className="text-sm font-semibold">Pedidos del año</h2>
-            <Select
-              disallowEmptySelection
-              aria-label="Año"
-              className="w-24"
-              classNames={{ trigger: "min-h-8 h-8" }}
-              selectedKeys={[String(year)]}
-              size="sm"
-              variant="flat"
-              onChange={(e) => {
-                if (e.target.value) setSelectedYear(parseInt(e.target.value));
-              }}
-            >
-              {availableYears.map((y) => (
-                <SelectItem key={String(y)} textValue={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </Select>
-            <span className="text-sm text-default-600">
-              <span className="font-semibold tabular-nums text-foreground">
-                {num(d.suma)}
-              </span>{" "}
-              pedidos, {pct(d.completados, d.suma)} completados
-            </span>
-          </div>
-          <ul className="flex flex-wrap items-center gap-x-4 text-xs text-default-600">
+        {/* UNA sola fila (sin envolver). Anchos con letra de 12 px, en unos 745 px útiles:
+            título 111 + año 72 + resumen 152 + Completados 123 + Sin completar 130 +
+            «— 2025» 44 = 632, más 5 huecos de 12 = 692. `overflow-x-clip` y no `hidden`: el
+            menú del año va en un portal, y así tampoco se recorta el foco en vertical. */}
+        <div className="flex min-h-11 shrink-0 flex-nowrap items-center gap-x-3 overflow-x-clip border-b border-divider px-4 py-1">
+          <h2 className="shrink-0 whitespace-nowrap text-sm font-semibold">
+            Pedidos del año
+          </h2>
+          <Select
+            disallowEmptySelection
+            aria-label="Año"
+            className="w-[72px] shrink-0"
+            classNames={{ trigger: "min-h-8 h-8" }}
+            selectedKeys={[String(year)]}
+            size="sm"
+            variant="flat"
+            onChange={(e) => {
+              if (e.target.value) setSelectedYear(parseInt(e.target.value));
+            }}
+          >
+            {availableYears.map((y) => (
+              <SelectItem key={String(y)} textValue={String(y)}>
+                {y}
+              </SelectItem>
+            ))}
+          </Select>
+          <span className="whitespace-nowrap text-xs text-default-600">
+            <span className="font-semibold tabular-nums text-foreground">
+              {num(d.suma)}
+            </span>{" "}
+            ({pct(d.completados, d.suma)} completados)
+          </span>
+          <ul className="ml-auto flex items-center gap-x-3 whitespace-nowrap text-xs text-default-600">
             <li className="flex items-center gap-1.5">
               <span
                 aria-hidden
@@ -242,9 +245,6 @@ export function LineChartCard() {
                   style={{ background: config.anterior.color }}
                 />
                 {year - 1}
-                <span className="font-semibold tabular-nums text-foreground">
-                  {num(d.totalAnterior)}
-                </span>
               </li>
             )}
           </ul>

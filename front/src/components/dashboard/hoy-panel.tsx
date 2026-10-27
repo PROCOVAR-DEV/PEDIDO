@@ -386,7 +386,7 @@ export function Resumen({
     >
       <CardBody
         className={cn(
-          "min-h-0 flex-col justify-between gap-3 overflow-y-clip border border-divider p-4",
+          "min-h-0 flex-col gap-4 overflow-y-clip border border-divider p-4",
           !verResumen && "justify-center",
         )}
       >

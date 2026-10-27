@@ -317,7 +317,7 @@ export default function PanelPage() {
       className={cn(
         "flex flex-col gap-4 xl:-mb-12 xl:-mt-12 xl:grid xl:h-[calc(100dvh-2rem)] xl:gap-3",
         ve.has("hoy")
-          ? "xl:grid-rows-[auto_auto_minmax(0,1fr)]"
+          ? "xl:grid-rows-[auto_auto_auto] xl:content-start"
           : "xl:grid-rows-[auto_auto_auto_minmax(0,1fr)]",
       )}
     >
@@ -391,13 +391,8 @@ export default function PanelPage() {
 
       {/* 2. RESUMEN DIARIO (con el aviso de ayer) y evolución anual, a la misma altura. */}
       {ve.has("hoy") ? (
-        <div className="grid grid-cols-1 gap-4 xl:max-h-[600px] xl:min-h-0 xl:grid-cols-12">
-          <div
-            className={cn(
-              "flex min-h-0 flex-col",
-              ve.has("hoy") ? "xl:col-span-5" : "xl:col-span-4",
-            )}
-          >
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,9fr)_minmax(0,16fr)] xl:items-stretch">
+          <div className="flex min-h-0 flex-col">
             <Resumen
               cargando={hoy.cargando}
               cargandoTotales={isLoading}
@@ -438,10 +433,7 @@ export default function PanelPage() {
           </div>
           <section
             aria-label="Evolución anual"
-            className={cn(
-              "h-[340px] xl:h-full xl:min-h-0",
-              ve.has("hoy") ? "xl:col-span-7" : "xl:col-span-8",
-            )}
+            className="h-[340px] xl:h-auto xl:min-h-[340px]"
           >
             <LineChartCard />
           </section>
