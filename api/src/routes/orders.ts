@@ -641,21 +641,30 @@ router.post('/liberar', async (req, res) => {
       return res.status(403).json({ error: 'Solo un Supervisor o un rol superior puede liberar pedidos.' });
     }
 
+    // `todos: true` libera TODO lo retenido de la sucursal elegida (nunca de «Todas» a la vez).
+    const todos = req.body?.todos === true;
     const ids: string[] = Array.isArray(req.body?.ids)
       ? [...new Set<string>(req.body.ids.filter((x: unknown): x is string => typeof x === 'string' && !!x.trim()))]
       : [];
 
-    if (ids.length === 0) return res.status(400).json({ error: 'No hay pedidos elegidos.' });
+    if (!todos && ids.length === 0) return res.status(400).json({ error: 'No hay pedidos elegidos.' });
     if (ids.length > 500) return res.status(400).json({ error: 'Son demasiados de una vez (máximo 500).' });
 
     const { where, error: sucursalError } = alcancePedido(req);
 
     if (sucursalError || !where) return res.status(400).json({ error: sucursalError });
+    // `alcancePedido` trae el id de la URL (aquí no hay): se queda solo con la sucursal.
+    const alcance = { sucursalId: where.sucursalId };
+
+    if (todos && !alcance.sucursalId) {
+      return res.status(400).json({ error: 'Elige una sucursal concreta para liberar todo.' });
+    }
 
     const ahora = new Date();
     const retenidos = await prisma.pedido.findMany({
-      where: { ...where, id: { in: ids }, visibleDesde: { gt: ahora } },
+      where: { ...alcance, ...(todos ? {} : { id: { in: ids } }), visibleDesde: { gt: ahora } },
       select: { id: true, visibleDesde: true },
+      take: 5000,
     });
 
     if (retenidos.length === 0) return res.json({ liberados: 0 });

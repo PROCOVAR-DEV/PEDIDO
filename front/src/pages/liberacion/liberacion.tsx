@@ -8,7 +8,7 @@ export default function LiberacionPage() {
       <NavigationHeading
         cta={{ href: "/panel", label: "Ir a Panel de Control" }}
         icon="calendar"
-        paragraph="La hora de liberación de la sucursal y los pedidos que se están reteniendo"
+        paragraph="Pedidos que esperan su hora de liberación"
         title="Liberación de pedidos"
       />
 

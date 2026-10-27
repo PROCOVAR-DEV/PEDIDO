@@ -571,6 +571,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
     setDomicilioFilter("todos");
     setVendedorFilter("todos");
     setIncluirArchivados(false);
+    setSoloRetenidos(fijo);
     setPage(1);
   };
 
@@ -628,7 +629,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
     (vendedorFilter !== "todos" ? 1 : 0) +
     (incluirArchivados ? 1 : 0) +
     (soloConsumo ? 1 : 0) +
-    (soloRetenidos ? 1 : 0);
+    (soloRetenidos && !fijo ? 1 : 0);
   const [fechaDesde, setFechaDesde] = useState<string>("");
   const [fechaHasta, setFechaHasta] = useState<string>("");
 
@@ -776,6 +777,12 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
     onOpen: onConfirmOpen,
     onClose: onConfirmClose,
   } = useDisclosure();
+  const {
+    isOpen: isLiberarTodosOpen,
+    onOpen: onLiberarTodosOpen,
+    onClose: onLiberarTodosClose,
+  } = useDisclosure();
+  const [liberandoTodos, setLiberandoTodos] = useState(false);
   const {
     isOpen: isDeleteConfirmOpen,
     onOpen: onDeleteConfirmOpen,
@@ -1101,6 +1108,43 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
     },
     [fetchOrders],
   );
+
+  // Libera TODO lo retenido de la sucursal elegida (el api rechaza «Todas»).
+  const handleLiberarTodos = useCallback(async () => {
+    setLiberandoTodos(true);
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/orders/liberar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ todos: true }),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          await mensajeDeError(response, "No se pudieron liberar los pedidos"),
+        );
+      }
+
+      const { liberados } = (await response.json()) as { liberados: number };
+
+      onLiberarTodosClose();
+      void fetchOrders(true);
+      addToast({
+        title: "Pedidos liberados",
+        description: `${liberados} ${liberados === 1 ? "pedido liberado" : "pedidos liberados"}. Facturación ya los ve.`,
+        color: "success",
+      });
+    } catch (err) {
+      addToast({
+        title: "No se liberaron",
+        description:
+          err instanceof Error ? err.message : "No se pudieron liberar los pedidos",
+        color: "danger",
+      });
+    } finally {
+      setLiberandoTodos(false);
+    }
+  }, [fetchOrders, onLiberarTodosClose]);
 
   const handleDeleteOrder = useCallback(
     async (orderId: string) => {
@@ -1524,6 +1568,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
 
   return (
     <div className="flex flex-col w-full gap-4">
+      {!fijo && (<>
       {/* En qué moneda se ven los importes.
           Arriba del todo y siempre visible: si estuviera escondido en un menú, alguien
           leería un total en CUP creyendo que son dólares. La diferencia son dos órdenes
@@ -1554,6 +1599,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
           <Tab key="CUP" isDisabled={!tasa} title="CUP" />
         </Tabs>
       </div>
+      </>)}
 
       {/* Filters */}
       <Card className={cn(cards({ border: "default" }))}>
@@ -1615,6 +1661,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
             entre sí: pedido Y reparto Y factura.
           */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {!fijo && (<>
             {gruposDeEstado.map((g) => (
               <Select
                 key={g.titulo}
@@ -1701,6 +1748,8 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
               ))}
             </Select>
 
+            </>)}
+
             <VendedorSelect
               className="w-full"
               value={vendedorFilter}
@@ -1741,6 +1790,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
               onChange={(e) => setFechaHasta(e.target.value)}
               onClear={() => setFechaHasta("")}
             />
+            {!fijo && (<>
             <Button
               className="h-14 w-full"
               color={soloConsumo ? "primary" : "default"}
@@ -1761,12 +1811,13 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
             >
               Vendedores
             </Button>
+            </>)}
           </div>
 
           {/* Al final, debajo de las fechas: esto no es un filtro más —no acota lo que se
               busca, sino DÓNDE se busca—, y puesto entre la rejilla y las fechas partía el
               bloque por la mitad. */}
-          {verRetenidos && (
+          {verRetenidos && (!fijo || !activeSucursalId) && (
             <div className="flex flex-col gap-1">
               {!fijo && (
                 <Switch
@@ -1793,6 +1844,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
               )}
             </div>
           )}
+          {!fijo && (
           <Switch
             isSelected={incluirArchivados}
             size="sm"
@@ -1805,6 +1857,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
               Incluir archivados en la búsqueda
             </span>
           </Switch>
+          )}
         </CardBody>
       </Card>
 
@@ -1815,6 +1868,26 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
           Con `justify-between` y tres hijos, «Borrados» quedaba en medio y se movía de
           sitio según lo ancha que fuera la barra —que cambia con cada sucursal—. Un
           botón que no está donde estaba la última vez es un botón que no se encuentra. */}
+      {fijo ? (
+        // En Liberación no hay ingesta ni papelera: sólo lo que espera su hora.
+        totalRetenidos > 0 &&
+        activeSucursalId && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-default-600">
+              {totalRetenidos} {totalRetenidos === 1 ? "pedido espera" : "pedidos esperan"} su hora
+              de liberación.
+            </p>
+            <Button
+              color="warning"
+              size="lg"
+              startContent={<Icons.checkDouble className="size-5" />}
+              onPress={onLiberarTodosOpen}
+            >
+              Liberar todos ({totalRetenidos})
+            </Button>
+          </div>
+        )
+      ) : (
       <div className="flex items-center gap-3 flex-wrap">
         <div className="min-w-0 flex-1"><BarraEntrando conectado={live} /></div>
         <div className="ml-auto flex items-center gap-2 shrink-0">
@@ -1845,6 +1918,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
         )}
         </div>
       </div>
+      )}
 
       {/* Loading State */}
       {isLoading && (
@@ -1923,7 +1997,7 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
                           Retenido hasta {horaEnCuba(order.visibleDesde!)}
                         </Chip>
                       )}
-                      {chipDeFactura(order) && (
+                      {!fijo && chipDeFactura(order) && (
                           <Tooltip
                             content={
                               order.facturaCorregidoAt
@@ -1943,7 +2017,8 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
                             </Chip>
                           </Tooltip>
                         )}
-                      {order.estadoEntrega &&
+                      {!fijo &&
+                        order.estadoEntrega &&
                         entregaChip[order.estadoEntrega] && (
                           <Tooltip
                             content={
@@ -2995,6 +3070,40 @@ export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: bo
               }
             >
               Sí, Completar
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Confirmar «Liberar todos» */}
+      <Modal
+        isOpen={isLiberarTodosOpen}
+        placement="center"
+        onClose={onLiberarTodosClose}
+      >
+        <ModalContent>
+          <ModalHeader>Liberar todos los pedidos retenidos</ModalHeader>
+          <ModalBody>
+            <p className="text-default-700">
+              Se liberarán {totalRetenidos}{" "}
+              {totalRetenidos === 1 ? "pedido" : "pedidos"} de{" "}
+              {retenidos?.porSucursal.find((x) => x.sucursalId === activeSucursalId)
+                ?.sucursal ??
+                retenidos?.porSucursal[0]?.sucursal ??
+                "la sucursal"}{" "}
+              y facturación los verá ya.
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="flat" onPress={onLiberarTodosClose}>
+              Cancelar
+            </Button>
+            <Button
+              color="warning"
+              isLoading={liberandoTodos}
+              onPress={handleLiberarTodos}
+            >
+              Liberar todos
             </Button>
           </ModalFooter>
         </ModalContent>
