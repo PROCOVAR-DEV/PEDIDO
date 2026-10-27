@@ -1,17 +1,17 @@
-import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 
-import { NavigationHeading } from "@/components/navigation-heading";
+import { useEffect, useState } from "react";
+import { Button, Link } from "@heroui/react";
+
+import Icons from "@/components/icons/iconify";
+import { SucursalSelector } from "@/components/sucursal-selector";
+import { UserMenu } from "@/components/user-menu";
 import { useDashboard } from "@/providers/DashboardProvider";
 import {
+  AccesoPrincipal,
   AccesoRapido,
-  GrupoAccesos,
 } from "@/components/dashboard/acceso-rapido";
-import {
-  HoyPanel,
-  RetenidosCard,
-  fechaDeHoy,
-  haceCuanto,
-} from "@/components/dashboard/hoy-panel";
+import { Resumen, fechaDeHoy } from "@/components/dashboard/hoy-panel";
 import { useHoy } from "@/components/dashboard/use-hoy";
 import { getSucursalActiva } from "@/lib/sucursal-activa";
 import { LineChartCard } from "@/components/dashboard/LineChartCard";
@@ -19,6 +19,7 @@ import { getApiBaseUrl } from "@/config";
 import { useAuthStore } from "@/stores/authStore";
 import { esRolGlobal } from "@/lib/rol-global";
 import { useLiveEvents } from "@/hooks/use-live-events";
+import { cn } from "@/lib/utils";
 
 /**
  * QUÉ VE CADA ROL EN EL PANEL. Es el único sitio: para cambiar quién ve qué se toca
@@ -88,7 +89,9 @@ const CAPACIDADES: Record<string, readonly Bloque[]> = {
   SUPERVISOR: SUCURSAL_ENTERA,
   // Gerente no gestiona vendedores, y las rutas de importar y de reportes no lo dejan entrar
   // (App.tsx): sin esas baldosas no hay botones que lleven a «sin permiso».
-  GERENTE: SUCURSAL_ENTERA.filter((b) => !["vendedores", "importar", "reportes"].includes(b)),
+  GERENTE: SUCURSAL_ENTERA.filter(
+    (b) => !["vendedores", "importar", "reportes"].includes(b),
+  ),
   // Sólo lo suyo: sin informes ni facturación de la sucursal.
   GESTOR: ["totales", "pedidos", "clientes", "perfil"],
   // Factura: ve pedidos, vendedores y clientes de su sucursal; ni importa ni saca informes.
@@ -161,40 +164,207 @@ export default function PanelPage() {
     hoy.recargarEnFondo();
   });
 
-  const pasada = hoy.resumen?.ultimaPasada;
+  // Las baldosas pequeñas, en el orden de uso. La tabla CAPACIDADES decide cuáles salen.
+  const retenidos = hoy.retenidos;
+  const nRetenidos = retenidos?.total ?? 0;
+  const regla = hoy.regla;
+  const descLiberacion =
+    nRetenidos > 0
+      ? !activeSucursalId
+        ? (retenidos?.porSucursal ?? [])
+            .map((x) => `${x.sucursal} ${x.total}`)
+            .join(", ")
+        : regla?.activa
+          ? `Se liberan a las ${regla.hoyDesde}`
+          : "Esperando su hora de liberación"
+      : regla && !regla.activa
+        ? "La regla está apagada"
+        : "Retenidos y hora de liberación";
+
+  const pequenas: Array<{
+    bloque: Bloque;
+    props: React.ComponentProps<typeof AccesoRapido>;
+  }> = [
+    {
+      bloque: "importar",
+      props: {
+        color: "primary",
+        description: "Subir el CSV de Parranda",
+        href: "/panel/panel-pedidos/nuevo",
+        icon: "add",
+        title: "Importar pedidos",
+      },
+    },
+    {
+      bloque: "clientes",
+      props: {
+        color: "secondary",
+        description: "Clientes del sistema",
+        href: "/panel/clientes",
+        icon: "client",
+        title: "Clientes",
+      },
+    },
+    {
+      bloque: "vendedores",
+      props: {
+        color: "secondary",
+        description: "Vendedores del sistema",
+        href: "/panel/trabajadores",
+        icon: "workers",
+        title: "Vendedores",
+      },
+    },
+    {
+      bloque: "reportes",
+      props: {
+        color: "danger",
+        description: "Generar y exportar",
+        href: "/panel/reportes",
+        icon: "reports",
+        title: "Reportes",
+      },
+    },
+    {
+      bloque: "liberacion",
+      props: {
+        color: "warning",
+        description: descLiberacion,
+        href: "/panel/liberacion",
+        icon: "calendar",
+        insignia: {
+          valor: nRetenidos,
+          etiqueta: nRetenidos === 1 ? "pedido retenido" : "pedidos retenidos",
+        },
+        title: "Liberación de pedidos",
+      },
+    },
+    {
+      bloque: "usuarios",
+      props: {
+        color: "success",
+        description: "Usuarios del sistema",
+        href: "/panel/panel-usuarios",
+        icon: "users",
+        title: "Usuarios",
+      },
+    },
+    {
+      bloque: "configuracion",
+      props: {
+        color: "warning",
+        description: "Sucursales y parámetros",
+        href: "/panel/configuracion",
+        icon: "configuracion",
+        title: "Configuración",
+      },
+    },
+    {
+      bloque: "perfil",
+      props: {
+        color: "primary",
+        description: "Tus métricas y tus datos",
+        href: "/panel/mi-perfil",
+        icon: "user",
+        title: "Mi perfil",
+      },
+    },
+  ];
+  const visibles = pequenas.filter((x) => ve.has(x.bloque));
+
+  // REPARTO DE LA REJILLA (escritorio, xl): «Pedidos» ocupa 2 columnas y, si hay más de
+  // 4 baldosas pequeñas, 2 filas; las columnas salen del número de baldosas para que no
+  // queden huecos. Si sobra un hueco (n impar en dos filas) la última se ensancha.
+  // Por debajo de xl son 2 columnas y la última impar ocupa las dos.
+  const n = visibles.length;
+  const principal = ve.has("pedidos");
+  const filas = n <= 4 ? 1 : 2;
+  const porFila = Math.ceil(n / filas);
+  const columnas = (principal ? 2 : 0) + porFila;
+  const hueco = filas * porFila - n;
+
+  // La línea de debajo del título: quién eres y dónde, y la fecha, en tramos separados.
+  const dondeEstas =
+    !activeSucursalId && !sucursalNombre
+      ? `${user?.role ?? ""}, ${lugar.toLowerCase()}`
+      : lugar
+        ? `${user?.role ?? ""} de ${lugar}`
+        : (user?.role ?? "");
+
+  const dato = ve.has("hoy") ? (hoy.resumen?.totales.total ?? null) : null;
 
   return (
-    <section className="flex flex-col gap-6">
-      <NavigationHeading
-        cta={{ href: "/", label: "Ir al Inicio" }}
-        icon="locales"
-        paragraph={
-          <>
-            {TEXTO_CABECERA[rol] ?? (
-              <>
-                {fechaDeHoy()}
-                {pasada &&
-                  ` · Facturas comprobadas ${haceCuanto(pasada.cuando)}`}
-              </>
-            )}
-            <span className="block text-sm font-normal text-default-500">
-              {[user?.role, lugar].filter(Boolean).join(" · ")}
-            </span>
-          </>
-        }
-        title={
-          sucursalNombre
-            ? `Sucursal ${sucursalNombre} - Panel de Control`
-            : "Panel de Control"
-        }
-      />
+    <section className="flex flex-col gap-5">
+      {/* Cabecera de una línea: sin el bloque grande de siempre, que se comía la altura
+          que necesitan las baldosas. */}
+      <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-primary">Inicio</h1>
+          <p className="flex flex-wrap gap-x-4 text-sm text-default-500">
+            <span>{dondeEstas}</span>
+            <span>{fechaDeHoy()}</span>
+            {TEXTO_CABECERA[rol] && <span>{TEXTO_CABECERA[rol]}</span>}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <SucursalSelector />
+          <UserMenu />
+          <Button
+            as={Link}
+            color="primary"
+            href="/"
+            radius="md"
+            startContent={<Icons.back className="size-5" />}
+            variant="flat"
+          >
+            Ir al inicio
+          </Button>
+        </div>
+      </header>
 
-      {/* HOY y los totales en un bloque; lo retenido al lado, sólo para quien puede liberar. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div
-          className={ve.has("retenidos") ? "lg:col-span-2" : "lg:col-span-3"}
-        >
-          <HoyPanel
+      {/* 1. LOS ACCESOS: lo principal del panel. */}
+      <nav
+        aria-label="Accesos rápidos"
+        className="grid grid-cols-2 gap-3 xl:[grid-template-columns:repeat(var(--columnas),minmax(0,1fr))]"
+        style={{ "--columnas": columnas } as CSSProperties}
+      >
+        {principal && (
+          <AccesoPrincipal
+            alto={filas === 2}
+            cargando={ve.has("hoy") && hoy.cargando && !hoy.resumen}
+            className={cn(
+              "col-span-2 xl:col-span-2",
+              filas === 2 && "xl:row-span-2",
+            )}
+            dato={dato}
+            description="Ver y gestionar los pedidos"
+            etiquetaDato="pedidos de hoy"
+            href="/panel/panel-pedidos"
+            icon="pedido"
+            title="Pedidos"
+          />
+        )}
+        {visibles.map((x, i) => {
+          const ultima = i === n - 1;
+
+          return (
+            <AccesoRapido
+              key={x.bloque}
+              {...x.props}
+              className={cn(
+                ultima && n % 2 === 1 && "col-span-2",
+                ultima && "xl:col-span-1",
+                ultima && hueco === 1 && "xl:col-span-2",
+              )}
+            />
+          );
+        })}
+      </nav>
+
+      {/* 2. EL RESUMEN y la evolución, en la misma fila y a la misma altura. */}
+      <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-12">
+        <div className={ve.has("hoy") ? "xl:col-span-5" : "xl:col-span-4"}>
+          <Resumen
             cargando={hoy.cargando}
             cargandoTotales={isLoading}
             error={hoy.error}
@@ -213,110 +383,16 @@ export default function PanelPage() {
             verResumen={ve.has("hoy")}
             verTotales={ve.has("totales")}
             onReintentar={() => void hoy.recargar()}
+            onReintentarTotales={() => void refetch()}
           />
         </div>
-        {ve.has("retenidos") && (
-          <RetenidosCard
-            cargando={hoy.cargando}
-            regla={hoy.regla}
-            retenidos={hoy.retenidos}
-            todas={!activeSucursalId}
-          />
-        )}
+        <section
+          aria-label="Evolución anual"
+          className={ve.has("hoy") ? "xl:col-span-7" : "xl:col-span-8"}
+        >
+          <LineChartCard compacto />
+        </section>
       </div>
-
-      {/* Accesos: baldosas compactas por grupo. La visibilidad por rol es la de siempre. */}
-      <div className="flex flex-col gap-4">
-        <GrupoAccesos titulo="Trabajo diario">
-          {ve.has("pedidos") && (
-            <AccesoRapido
-              color="primary"
-              description="Ver y gestionar los pedidos"
-              href="/panel/panel-pedidos"
-              icon="pedido"
-              title="Pedidos"
-            />
-          )}
-          {ve.has("importar") && (
-            <AccesoRapido
-              color="primary"
-              description="Archivo CSV de Parranda"
-              href="/panel/panel-pedidos/nuevo"
-              icon="add"
-              title="Importar pedido"
-            />
-          )}
-          {ve.has("clientes") && (
-            <AccesoRapido
-              color="secondary"
-              description="Clientes del sistema"
-              href="/panel/clientes"
-              icon="client"
-              title="Clientes"
-            />
-          )}
-          {ve.has("vendedores") && (
-            <AccesoRapido
-              color="secondary"
-              description="Vendedores del sistema"
-              href="/panel/trabajadores"
-              icon="workers"
-              title="Vendedores"
-            />
-          )}
-          {ve.has("perfil") && (
-            <AccesoRapido
-              color="primary"
-              description="Tus métricas y tus datos"
-              href="/panel/mi-perfil"
-              icon="user"
-              title="Mi perfil"
-            />
-          )}
-        </GrupoAccesos>
-        <GrupoAccesos titulo="Control">
-          {ve.has("reportes") && (
-            <AccesoRapido
-              color="danger"
-              description="Generar y exportar reportes"
-              href="/panel/reportes"
-              icon="reports"
-              title="Reportes"
-            />
-          )}
-          {ve.has("liberacion") && (
-            <AccesoRapido
-              color="warning"
-              description="Retenidos y hora de liberación"
-              href="/panel/liberacion"
-              icon="calendar"
-              title="Liberación"
-            />
-          )}
-        </GrupoAccesos>
-        <GrupoAccesos titulo="Administración">
-          {ve.has("usuarios") && (
-            <AccesoRapido
-              color="success"
-              description="Usuarios del sistema"
-              href="/panel/panel-usuarios"
-              icon="users"
-              title="Usuarios"
-            />
-          )}
-          {ve.has("configuracion") && (
-            <AccesoRapido
-              color="warning"
-              description="Sucursales y parámetros"
-              href="/panel/configuracion"
-              icon="configuracion"
-              title="Configuración"
-            />
-          )}
-        </GrupoAccesos>
-      </div>
-
-      <LineChartCard />
     </section>
   );
 }

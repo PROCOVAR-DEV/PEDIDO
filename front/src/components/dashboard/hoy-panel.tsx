@@ -1,13 +1,6 @@
-import type { ReglaHoy, ResumenHoy, RetenidosHoy } from "./use-hoy";
+import type { ResumenHoy } from "./use-hoy";
 
-import {
-  Button,
-  Card,
-  CardBody,
-  Link,
-  Progress,
-  Skeleton,
-} from "@heroui/react";
+import { Button, Link, Skeleton } from "@heroui/react";
 
 import { cn } from "@/lib/utils";
 
@@ -43,34 +36,29 @@ const TONOS = {
   suave: "text-default-400",
 } as const;
 
-function Cifra({
+/** Una línea del resumen: la etiqueta a la izquierda, la cifra a la derecha, misma línea base. */
+function Fila({
   etiqueta,
   valor,
   tono = "base",
-  grande = false,
   cargando,
 }: {
   etiqueta: string;
-  valor: number | string;
+  valor: number;
   tono?: keyof typeof TONOS;
-  grande?: boolean;
   cargando: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-sm text-default-500">{etiqueta}</dt>
+    <div className="flex items-baseline justify-between gap-3 border-b border-divider py-1.5">
+      <dt className="text-sm text-default-600">{etiqueta}</dt>
       <dd>
         {cargando ? (
-          <Skeleton className="rounded-lg">
-            <div className={grande ? "h-9 w-14" : "h-7 w-12"} />
+          <Skeleton className="rounded">
+            <span className="block h-5 w-8" />
           </Skeleton>
         ) : (
           <span
-            className={cn(
-              "font-semibold tabular-nums",
-              grande ? "text-4xl" : "text-2xl",
-              TONOS[tono],
-            )}
+            className={cn("text-base font-medium tabular-nums", TONOS[tono])}
           >
             {valor}
           </span>
@@ -88,10 +76,10 @@ export interface Totales {
 }
 
 /**
- * Lo que está pasando hoy y, debajo, los totales de siempre. Sin `resumen` (el rol no
- * lo recibe) sólo queda la fila de totales.
+ * Resumen, sin cajas: una sola cifra grande («Facturados hoy») y el resto en líneas
+ * finas separadas por filetes. Sin `resumen` (el rol no lo recibe) sólo quedan los totales.
  */
-export function HoyPanel({
+export function Resumen({
   verResumen,
   verTotales,
   resumen,
@@ -101,6 +89,7 @@ export function HoyPanel({
   totales,
   cargandoTotales,
   errorTotales,
+  onReintentarTotales,
 }: {
   verResumen: boolean;
   verTotales: boolean;
@@ -111,6 +100,7 @@ export function HoyPanel({
   totales: Totales | null;
   cargandoTotales: boolean;
   errorTotales: string | null;
+  onReintentarTotales: () => void;
 }) {
   const t = resumen?.totales;
   const conFactura = (t?.facturado ?? 0) + (t?.cambiado ?? 0);
@@ -118,215 +108,154 @@ export function HoyPanel({
     (s) => s.error,
   ).length;
   const esperando = cargando && !resumen;
+  const pasada = resumen?.ultimaPasada;
 
   return (
-    <Card className="h-full">
-      <CardBody className="gap-5 p-5">
-        {verResumen && (
-          <section aria-label="Hoy" className="flex flex-col gap-4">
-            <h2 className="text-lg font-semibold">Hoy</h2>
-            {error && !resumen ? (
-              <p className="flex flex-wrap items-center gap-2 text-sm text-default-500">
-                No se pudo cargar lo de hoy: {error}
-                <Button size="sm" variant="flat" onPress={onReintentar}>
-                  Reintentar
-                </Button>
-              </p>
-            ) : (
-              <>
-                {/* Lo que se facturó hoy, de cualquier día: Camagüey, por ejemplo, factura
-                    el día siguiente, y contar sólo los pedidos de hoy parecía que no
-                    se facturaba nada. */}
-                <div className="flex flex-col gap-0.5">
-                  <p className="text-sm text-default-500">Facturados hoy</p>
-                  {esperando ? (
-                    <Skeleton className="rounded-lg">
-                      <div className="h-10 w-16" />
-                    </Skeleton>
-                  ) : (
-                    <p className="text-5xl font-semibold tabular-nums text-success-600">
-                      {resumen?.facturadosEseDia ?? 0}
-                    </p>
-                  )}
-                  <p className="text-xs text-default-500">
-                    pedidos que recibieron factura hoy, de cualquier día
-                  </p>
-                </div>
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-5">
-                  <Cifra
-                    cargando={esperando}
-                    etiqueta="Pedidos de hoy"
-                    valor={t?.total ?? 0}
-                  />
-                  <Cifra
-                    cargando={esperando}
-                    etiqueta="De los pedidos de hoy, con factura"
-                    tono={conFactura ? "ok" : "suave"}
-                    valor={conFactura}
-                  />
-                  <Cifra
-                    cargando={esperando}
-                    etiqueta="Buscando factura"
-                    tono={t?.buscando ? "base" : "suave"}
-                    valor={t?.buscando ?? 0}
-                  />
-                  {/* Discreto: un pedido de hoy sin factura es lo normal, se factura mañana. */}
-                  <Cifra
-                    cargando={esperando}
-                    etiqueta="Sin factura"
-                    tono={t?.no_aparecio ? "base" : "suave"}
-                    valor={t?.no_aparecio ?? 0}
-                  />
-                  <Cifra
-                    cargando={esperando}
-                    etiqueta="Sin completar"
-                    tono={t?.sin_completar ? "base" : "suave"}
-                    valor={t?.sin_completar ?? 0}
-                  />
-                </dl>
-                {!esperando &&
-                  t &&
-                  (t.total === 0 ? (
-                    <p className="text-sm text-default-500">
-                      Hoy todavía no ha entrado ningún pedido.
-                    </p>
-                  ) : (
-                    <Progress
-                      aria-label="Pedidos de hoy ya facturados"
-                      classNames={{ label: "text-sm text-default-500" }}
-                      color="success"
-                      label={`Pedidos de hoy ya facturados: ${conFactura} de ${t.total}`}
-                      size="sm"
-                      value={(conFactura / t.total) * 100}
-                    />
-                  ))}
-                {!esperando && resumen && !resumen.ultimaPasada && (
-                  <p className="text-xs text-default-500">
-                    Aún no hay una comprobación de facturas reciente.
-                  </p>
-                )}
-                {conError > 0 && (
-                  <p className="text-xs text-warning-600">
-                    {conError}{" "}
-                    {conError === 1 ? "sucursal dio" : "sucursales dieron"}{" "}
-                    error en la última comprobación.{" "}
-                    <Link
-                      className="text-xs"
-                      href="/panel/sincronizacion/facturacion"
-                    >
-                      Ver detalle
-                    </Link>
-                  </p>
-                )}
-              </>
+    <section
+      aria-label="Resumen"
+      className={cn("flex flex-col gap-5", !verResumen && "justify-center")}
+    >
+      {verResumen && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+            <h2 className="text-base font-semibold">Hoy</h2>
+            {pasada && (
+              <span className="text-xs text-default-500">
+                Facturas comprobadas {haceCuanto(pasada.cuando)}
+              </span>
             )}
-          </section>
-        )}
+          </div>
 
-        {verTotales && (
-          <section aria-label="Totales">
-            {errorTotales && !totales ? (
-              <p className="text-sm text-default-500">
-                No se pudieron cargar los totales de pedidos.
-              </p>
-            ) : (
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
-                <Cifra
-                  cargando={cargandoTotales}
-                  etiqueta="Total de pedidos"
-                  grande={!verResumen}
-                  valor={totales?.total ?? 0}
+          {error && !resumen ? (
+            <p className="flex flex-wrap items-center gap-2 text-sm text-default-600">
+              No se pudo cargar lo de hoy ({error}). Comprueba la conexión y
+              vuelve a intentarlo.
+              <Button size="sm" variant="flat" onPress={onReintentar}>
+                Reintentar
+              </Button>
+            </p>
+          ) : (
+            <>
+              {/* Lo que se facturó hoy, de cualquier día: Camagüey, por ejemplo, factura
+                  el día siguiente, y contar sólo los pedidos de hoy parecía que no se
+                  facturaba nada. Es la única cifra grande del resumen. */}
+              <div className="flex items-baseline gap-3">
+                {esperando ? (
+                  <Skeleton className="rounded-lg">
+                    <span className="block h-11 w-16" />
+                  </Skeleton>
+                ) : (
+                  <span className="text-5xl font-semibold leading-none tabular-nums text-success-600">
+                    {resumen?.facturadosEseDia ?? 0}
+                  </span>
+                )}
+                <span className="text-sm text-default-600">
+                  facturados hoy
+                  <span className="block text-xs text-default-500">
+                    pedidos que recibieron factura hoy, de cualquier día
+                  </span>
+                </span>
+              </div>
+
+              <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+                <Fila
+                  cargando={esperando}
+                  etiqueta="Pedidos de hoy"
+                  valor={t?.total ?? 0}
                 />
-                <Cifra
-                  cargando={cargandoTotales}
-                  etiqueta="Completados"
-                  grande={!verResumen}
-                  tono="ok"
-                  valor={totales?.completados ?? 0}
+                <Fila
+                  cargando={esperando}
+                  etiqueta="De ellos, con factura"
+                  tono={conFactura ? "ok" : "suave"}
+                  valor={conFactura}
                 />
-                <Cifra
-                  cargando={cargandoTotales}
-                  etiqueta="En proceso"
-                  grande={!verResumen}
-                  tono="aviso"
-                  valor={totales?.enProceso ?? 0}
+                <Fila
+                  cargando={esperando}
+                  etiqueta="Buscando factura"
+                  tono={t?.buscando ? "base" : "suave"}
+                  valor={t?.buscando ?? 0}
                 />
-                <Cifra
-                  cargando={cargandoTotales}
-                  etiqueta="Expirados"
-                  grande={!verResumen}
-                  valor={totales?.expirados ?? 0}
+                {/* Discreto: un pedido de hoy sin factura es lo normal, se factura mañana. */}
+                <Fila
+                  cargando={esperando}
+                  etiqueta="Sin factura"
+                  tono={t?.no_aparecio ? "base" : "suave"}
+                  valor={t?.no_aparecio ?? 0}
+                />
+                <Fila
+                  cargando={esperando}
+                  etiqueta="Sin completar"
+                  tono={t?.sin_completar ? "base" : "suave"}
+                  valor={t?.sin_completar ?? 0}
                 />
               </dl>
-            )}
-          </section>
-        )}
-      </CardBody>
-    </Card>
-  );
-}
 
-/** Lo retenido por la liberación por hora: discreto si no hay nada, ámbar si hay. */
-export function RetenidosCard({
-  retenidos,
-  regla,
-  cargando,
-  todas,
-}: {
-  retenidos: RetenidosHoy | null;
-  regla: ReglaHoy | null;
-  cargando: boolean;
-  /** El selector está en «Todas»: se enseña el desglose y no la regla de una sucursal. */
-  todas: boolean;
-}) {
-  const total = retenidos?.total ?? 0;
-  const hay = total > 0;
-  const desglose = (retenidos?.porSucursal ?? [])
-    .map((x) => `${x.sucursal} ${x.total}`)
-    .join(" · ");
-
-  return (
-    <Link className="block self-start" href="/panel/liberacion">
-      <Card
-        isPressable
-        className={cn(
-          "w-full border",
-          hay ? "border-warning-200 bg-warning-50/30" : "border-default-200",
-        )}
-        shadow="sm"
-      >
-        <CardBody className="gap-1 p-5">
-          <h2 className="text-lg font-semibold">Retenidos</h2>
-          {cargando && !retenidos ? (
-            <Skeleton className="rounded-lg">
-              <div className="h-9 w-14" />
-            </Skeleton>
-          ) : (
-            <p
-              className={cn(
-                "text-4xl font-semibold tabular-nums",
-                hay ? "text-warning-600" : "text-default-400",
+              {!esperando && t?.total === 0 && (
+                <p className="text-sm text-default-500">
+                  Hoy todavía no ha entrado ningún pedido.
+                </p>
               )}
-            >
-              {total}
-            </p>
+              {!esperando && resumen && !pasada && (
+                <p className="text-xs text-default-500">
+                  Aún no hay una comprobación de facturas reciente.
+                </p>
+              )}
+              {conError > 0 && (
+                <p className="text-xs text-warning-600">
+                  {conError}{" "}
+                  {conError === 1 ? "sucursal dio" : "sucursales dieron"} error
+                  en la última comprobación.{" "}
+                  <Link
+                    className="text-xs"
+                    href="/panel/sincronizacion/facturacion"
+                  >
+                    Ver detalle
+                  </Link>
+                </p>
+              )}
+            </>
           )}
-          <p className="text-sm text-default-500">
-            {todas
-              ? hay
-                ? desglose
-                : "No hay pedidos retenidos."
-              : regla
-                ? regla.activa
-                  ? `${hay ? "Se liberan" : "Regla encendida: se liberan"} a las ${regla.hoyDesde}.`
-                  : "La regla está apagada."
-                : hay
-                  ? "Esperando su hora de liberación."
-                  : "No hay pedidos retenidos."}
-          </p>
-          <span className="mt-1 text-xs text-primary">Ver y liberar</span>
-        </CardBody>
-      </Card>
-    </Link>
+        </div>
+      )}
+
+      {verTotales && (
+        <div className="flex flex-col gap-2">
+          <h2 className="text-base font-semibold">Pedidos en total</h2>
+          {errorTotales && !totales ? (
+            <p className="flex flex-wrap items-center gap-2 text-sm text-default-600">
+              No se pudieron cargar los totales. Vuelve a intentarlo.
+              <Button size="sm" variant="flat" onPress={onReintentarTotales}>
+                Reintentar
+              </Button>
+            </p>
+          ) : (
+            <dl className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+              <Fila
+                cargando={cargandoTotales}
+                etiqueta="Total"
+                valor={totales?.total ?? 0}
+              />
+              <Fila
+                cargando={cargandoTotales}
+                etiqueta="Completados"
+                tono="ok"
+                valor={totales?.completados ?? 0}
+              />
+              <Fila
+                cargando={cargandoTotales}
+                etiqueta="En proceso"
+                tono="aviso"
+                valor={totales?.enProceso ?? 0}
+              />
+              <Fila
+                cargando={cargandoTotales}
+                etiqueta="Expirados"
+                valor={totales?.expirados ?? 0}
+              />
+            </dl>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

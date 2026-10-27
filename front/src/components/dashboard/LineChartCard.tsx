@@ -37,7 +37,8 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-export function LineChartCard() {
+/** `compacto`: más bajo, para compartir fila con el resumen sin pasar de un pantallazo. */
+export function LineChartCard({ compacto = false }: { compacto?: boolean }) {
   const { stats, isLoading, selectedYear, setSelectedYear } = useDashboard();
   const { monthlyStats = [], availableYears = [] } = stats || {};
 
@@ -108,7 +109,7 @@ export function LineChartCard() {
   }
 
   return (
-    <Card className="w-full">
+    <Card className="h-full w-full" shadow={compacto ? "none" : "md"}>
       <CardBody className="p-0">
         {/* Header */}
         <div className="flex flex-col border-b border-divider sm:flex-row">
@@ -151,7 +152,8 @@ export function LineChartCard() {
                 <button
                   key={chart}
                   className={cn(
-                    "flex flex-1 flex-col justify-center gap-1 border-success px-6 py-4 text-left transition-colors border-l-4 bg-success-50 hover:opacity-70 data-[active=true]:bg-success-100 sm:border-l-4 sm:px-8 sm:py-6",
+                    "flex flex-1 flex-col justify-center gap-1 border-success px-6 py-4 text-left transition-colors border-l-4 bg-success-50 hover:opacity-70 data-[active=true]:bg-success-100 sm:border-l-4 sm:px-8",
+                    compacto ? "sm:py-3" : "sm:py-6",
                     key === "pending" &&
                       "border-primary bg-primary-50 data-[active=true]:bg-primary-100",
                   )}
@@ -171,10 +173,18 @@ export function LineChartCard() {
         </div>
 
         {/* Chart */}
-        <div className="w-full overflow-x-auto px-2 sm:px-6 pb-6 pt-4">
+        <div
+          className={cn(
+            "w-full overflow-x-auto px-2 sm:px-6",
+            compacto ? "pb-3 pt-2" : "pb-6 pt-4",
+          )}
+        >
           <div style={{ minWidth: "600px" }}>
             <ChartContainer
-              className="aspect-auto h-[250px] w-full"
+              className={cn(
+                "aspect-auto w-full",
+                compacto ? "h-[190px]" : "h-[250px]",
+              )}
               config={chartConfig}
             >
               <LineChart
