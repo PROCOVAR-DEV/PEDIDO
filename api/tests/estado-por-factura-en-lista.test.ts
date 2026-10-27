@@ -48,6 +48,7 @@ const fake = {
       return p ? conInclude(p, include) : null;
     },
     count: async () => pedidos.length,
+    groupBy: async () => [],
     findMany: async ({ include }: any) => pedidos.map((p) => conInclude(p, include)),
   },
 };

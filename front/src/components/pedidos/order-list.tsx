@@ -533,7 +533,11 @@ function comoSeLeeElInstante(valor?: string | null): string | null {
 /** Letras mínimas para lanzar una búsqueda. Ver el efecto de la búsqueda más abajo. */
 const MIN_LETRAS_BUSQUEDA = 3;
 
-export const OrdersList = () => {
+/**
+ * `soloRetenidos`: la página de Liberación la usa FIJA en «retenidos» —sin interruptor y
+ * sin poder ver los demás—. La lista normal no lo pasa y conserva su interruptor.
+ */
+export const OrdersList = ({ soloRetenidos: fijo = false }: { soloRetenidos?: boolean }) => {
   const [page, setPage] = useState(1);
   const [estadosSel, setEstadosSel] = useState<string[]>([]);
   const [repartosSel, setRepartosSel] = useState<string[]>([]);
@@ -601,7 +605,7 @@ export const OrdersList = () => {
   // Consumo propio: un filtro de la lista, no un cajón. Ver `FiltrosPedidos`.
   const [soloConsumo, setSoloConsumo] = useState(false);
   // Ver sólo lo retenido por la liberación por hora. Es un filtro más de la misma lista.
-  const [soloRetenidos, setSoloRetenidos] = useState(false);
+  const [soloRetenidos, setSoloRetenidos] = useState(fijo);
   // Los productos que existen en esta sucursal, para el selector del filtro. Se piden
   // una vez: cambian cuando entran pedidos nuevos, no mientras se mira la lista.
   const [orderToReabrir, setOrderToReabrir] = useState<Order | null>(null);
@@ -893,10 +897,10 @@ export const OrdersList = () => {
   const pagination = datos?.pagination ?? PAGINACION_VACIA;
   const retenidos = datos?.retenidos;
   const totalRetenidos = retenidos?.total ?? 0;
-  // El Operador no ve lo retenido (el api le manda el contador vacío), así que no
-  // se le enseña el interruptor; a los demás, sólo si hay algo o ya está puesto.
+  // Lo retenido es sólo de quien puede liberar (el api lo exige y al resto le manda el
+  // contador vacío); y aun así, sólo si hay algo o ya está puesto.
   const verRetenidos =
-    session?.rol !== "OPERADOR" && (totalRetenidos > 0 || soloRetenidos);
+    puedeLiberar && (fijo || totalRetenidos > 0 || soloRetenidos);
 
   /**
    * El pedido del detalle, sacado SIEMPRE de la lista viva.
@@ -1764,18 +1768,20 @@ export const OrdersList = () => {
               bloque por la mitad. */}
           {verRetenidos && (
             <div className="flex flex-col gap-1">
-              <Switch
-                isSelected={soloRetenidos}
-                size="sm"
-                onValueChange={(v) => {
-                  setSoloRetenidos(v);
-                  setPage(1);
-                }}
-              >
-                <span className="text-sm text-default-600">
-                  Retenidos ({totalRetenidos})
-                </span>
-              </Switch>
+              {!fijo && (
+                <Switch
+                  isSelected={soloRetenidos}
+                  size="sm"
+                  onValueChange={(v) => {
+                    setSoloRetenidos(v);
+                    setPage(1);
+                  }}
+                >
+                  <span className="text-sm text-default-600">
+                    Retenidos ({totalRetenidos})
+                  </span>
+                </Switch>
+              )}
               {/* Con «Todas» hay que saber de qué sucursal es cada uno. Solo texto:
                   cambiar de sucursal recarga la página y se perdería el interruptor. */}
               {!activeSucursalId && (retenidos?.porSucursal.length ?? 0) > 0 && (

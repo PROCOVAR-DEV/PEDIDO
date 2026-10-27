@@ -489,7 +489,10 @@ router.get('/', async (req, res) => {
 
     // «Retenidos»: SOLO lo que la liberación por hora aún guarda (para comprobar que toma todo bien).
     const ahora = new Date();
+    const ctxRetenidos = getRequesterContext(req);
+    const veRetenidos = puedeReasignar(ctxRetenidos.role, ctxRetenidos.isGlobalAdmin);
     if (req.query.retenidos === '1' || req.query.retenidos === 'true') {
+      if (!veRetenidos) return res.status(403).json({ error: 'Solo un Supervisor o un rol superior puede ver los pedidos retenidos.' });
       conditions.push({ visibleDesde: { gt: ahora } });
     }
 
@@ -554,8 +557,8 @@ router.get('/', async (req, res) => {
     });
 
     // Cuántos hay retenidos ahora (de lo que alcanza este usuario), en total y por sucursal.
-    // Al Operador no se le cuenta lo que no puede ver.
-    const retenidosPorSucursal = getRequesterContext(req).ocultaRetenidos ? [] : await prisma.pedido.groupBy({
+    // Solo quien puede verlos y liberarlos recibe la cuenta.
+    const retenidosPorSucursal = !veRetenidos ? [] : await prisma.pedido.groupBy({
       by: ['sucursalId'],
       where: { sucursalId, visibleDesde: { gt: ahora }, ...(gestorCtx.isGestor && gestorCtx.userId ? { vendedor: { gestorId: gestorCtx.userId } } : {}) },
       _count: { _all: true },

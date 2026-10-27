@@ -32,6 +32,7 @@ const UsuariosPanelPage = lazy(() => import("./pages/usuarios/panel-usuarios"));
 const NuevoUsuarioPage = lazy(() => import("./pages/usuarios/nuevo-usuario"));
 const ListaUsuariosPage = lazy(() => import("./pages/usuarios/lista-usuarios"));
 const VendedoresPage = lazy(() => import("./pages/vendedores/vendedores"));
+const LiberacionPage = lazy(() => import("./pages/liberacion/liberacion"));
 const ClientesPage = lazy(() => import("./pages/clientes/clientes"));
 const MiPerfilPage = lazy(() => import("./pages/perfil/mi-perfil"));
 const ConfiguracionPage = lazy(
@@ -149,6 +150,19 @@ function App() {
               }
             >
               <Route element={<VendedoresPage />} path="/panel/trabajadores" />
+            </Route>
+
+            {/* Liberación de pedidos por hora: la regla de la sucursal y lo retenido.
+              Supervisor, Gerente y Administrador (los globales pasan solos); el
+              servidor los exige igual. */}
+            <Route
+              element={
+                <AdminRoute
+                  allowedRoles={["Administrador", "Supervisor", "Gerente"]}
+                />
+              }
+            >
+              <Route element={<LiberacionPage />} path="/panel/liberacion" />
             </Route>
 
             {/* Clientes */}

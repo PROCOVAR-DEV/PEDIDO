@@ -30,7 +30,7 @@ export const LiberacionPedidos = () => {
 
   useEffect(() => {
     if (sinSucursal) return;
-    fetch(`${getApiBaseUrl()}/config/liberacion`)
+    fetch(`${getApiBaseUrl()}/liberacion`)
       .then(async (r) => {
         if (!r.ok) throw new Error(await mensajeDeError(r, "No se pudo cargar"));
         setCfg(await r.json());
@@ -43,7 +43,7 @@ export const LiberacionPedidos = () => {
     if (!cfg) return;
     setGuardando(true);
     try {
-      const r = await fetch(`${getApiBaseUrl()}/config/liberacion`, {
+      const r = await fetch(`${getApiBaseUrl()}/liberacion`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -92,7 +92,6 @@ export const LiberacionPedidos = () => {
               </Switch>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Input
-                  isDisabled={!cfg.activa}
                   label="Aceptar los de ayer hasta"
                   size="sm"
                   type="time"
@@ -100,7 +99,6 @@ export const LiberacionPedidos = () => {
                   onValueChange={(v) => setCfg({ ...cfg, ayerHasta: v })}
                 />
                 <Input
-                  isDisabled={!cfg.activa}
                   label="Liberar los de hoy a las"
                   size="sm"
                   type="time"

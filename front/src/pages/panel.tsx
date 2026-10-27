@@ -30,6 +30,10 @@ export default function PanelPage() {
   const canVerVendedores =
     esRolGlobal(user?.role) ||
     ["administrador", "supervisor", "operador"].includes(role);
+  // Liberación de pedidos por hora: los mismos que acepta el servidor.
+  const puedeLiberar =
+    esRolGlobal(user?.role) ||
+    ["administrador", "supervisor", "gerente"].includes(role);
   const canManageUsers = esRolGlobal(user?.role) || role === "administrador";
   // La OPERADORA factura: ve todos los pedidos de SU sucursal, sus vendedores y
   // sus clientes, y copia los codigos al sistema contable. Lo que no hace es
@@ -124,6 +128,15 @@ export default function PanelPage() {
                 href="/panel/reportes"
                 icon="reports"
                 title="Reportes"
+              />
+            )}
+            {puedeLiberar && (
+              <ActionCard
+                color="warning"
+                description="Pedidos retenidos y su hora de liberación"
+                href="/panel/liberacion"
+                icon="calendar"
+                title="Liberación"
               />
             )}
             {isSuperAdmin && (
