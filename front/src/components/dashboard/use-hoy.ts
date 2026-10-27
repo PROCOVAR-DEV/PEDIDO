@@ -38,6 +38,42 @@ export interface ReglaHoy {
   hoyDesde: string;
 }
 
+/** El día `AAAA-MM-DD` que es ahora en Cuba, que es donde están las sucursales y donde cambia el día. */
+const hoyEnCuba = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Havana",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+/**
+ * El día de hoy EN CUBA, vivo: cambia solo al pasar la medianoche.
+ *
+ * Una pestaña del panel se queda abierta días enteros. Sin esto, pasada la medianoche seguía
+ * enseñando las cifras y la fecha de ayer como si fueran de «hoy». Se mira cada 30 s (barato, y
+ * cubre también el portátil que hibernó o el reloj que se atrasó) y al volver a la pestaña.
+ */
+export function useDiaDeCuba(): string {
+  const [dia, setDia] = useState(hoyEnCuba);
+
+  useEffect(() => {
+    const revisar = () => setDia(hoyEnCuba());
+    const t = setInterval(revisar, 30_000);
+
+    document.addEventListener("visibilitychange", revisar);
+    window.addEventListener("focus", revisar);
+
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", revisar);
+      window.removeEventListener("focus", revisar);
+    };
+  }, []);
+
+  return dia;
+}
+
 const pedir = async <T>(ruta: string): Promise<T> => {
   const r = await fetch(`${getApiBaseUrl()}${ruta}`);
 
@@ -57,6 +93,7 @@ export function useHoy(opts: {
   hayRegla: boolean;
 }) {
   const { verResumen, verRetenidos, hayRegla } = opts;
+  const dia = useDiaDeCuba();
   const [resumen, setResumen] = useState<ResumenHoy | null>(null);
   const [retenidos, setRetenidos] = useState<RetenidosHoy | null>(null);
   const [regla, setRegla] = useState<ReglaHoy | null>(null);
@@ -104,9 +141,12 @@ export function useHoy(opts: {
     [verResumen, verRetenidos, hayRegla],
   );
 
+  // Al cambiar el día (o los permisos) se vuelve a pedir TODO, y lo de ayer no se queda a la vista.
   useEffect(() => {
+    setResumen(null);
+    setRetenidos(null);
     void cargar();
-  }, [cargar]);
+  }, [cargar, dia]);
 
   // Los avisos en vivo llegan a ráfagas (una importación son decenas): se juntan en una
   // sola recarga, porque el resumen recorre todos los pedidos del día.
@@ -119,6 +159,7 @@ export function useHoy(opts: {
   useEffect(() => () => clearTimeout(timer.current), []);
 
   return {
+    dia,
     resumen,
     retenidos,
     regla,
