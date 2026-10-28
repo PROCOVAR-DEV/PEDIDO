@@ -23,6 +23,7 @@ import { NavigationHeading } from "@/components/navigation-heading";
 import { getApiBaseUrl } from "@/config";
 import { useAuthStore } from "@/stores/authStore";
 import { esRolGlobal } from "@/lib/rol-global";
+import { cuandoEnCuba } from "@/lib/entregas-de-factura";
 
 /**
  * El sincronizador de FACTURACIÓN: qué se cotejó contra Ventra y qué no cuadró.
@@ -90,6 +91,14 @@ interface PedidoFila {
   facturaNumero: string | null;
   completadoPor: string | null;
   factura: EstadoFactura;
+}
+
+interface ProductoSinCruce {
+  producto: string;
+  code: string | null;
+  sucursales: string[];
+  lineas: number;
+  ultimo: string;
 }
 
 interface Listado {
@@ -202,6 +211,38 @@ export default function SincronizacionFacturacionPage() {
   useEffect(() => {
     void cargarLista();
   }, [cargarLista]);
+
+  // Productos de pedidos que no cruzan con Ventra (sin precio ni peso). El api responde 403 a
+  // quien no es administrador: se trata como «no hay nada que enseñar», sin error visible.
+  const [sinCruce, setSinCruce] = useState<{ total: number; dias: number; productos: ProductoSinCruce[] } | null>(null);
+  const [cargandoCruce, setCargandoCruce] = useState(true);
+  const [falloCruce, setFalloCruce] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+
+    fetch(`${getApiBaseUrl()}/facturacion/productos-sin-cruce`)
+      .then(async (r) => {
+        if (r.status === 403) return null;
+        if (!r.ok) throw new Error(`Error ${r.status}`);
+
+        return r.json();
+      })
+      .then((j) => vivo && setSinCruce(j))
+      .catch(() => vivo && setFalloCruce(true))
+      .finally(() => vivo && setCargandoCruce(false));
+
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  // El enlace del panel trae `#productos-sin-cruce`; la sección llega después de cargar.
+  useEffect(() => {
+    if (!cargandoCruce && window.location.hash === "#productos-sin-cruce") {
+      document.getElementById("productos-sin-cruce")?.scrollIntoView({ block: "start" });
+    }
+  }, [cargandoCruce]);
 
   const copiar = async (folio: string) => {
     try {
@@ -531,6 +572,58 @@ export default function SincronizacionFacturacionPage() {
             </CardBody>
           </Card>
         </>
+      )}
+
+      {/* Productos de los pedidos que no se encuentran en el catálogo de su sucursal: salen
+          sin precio ni peso. Sólo se pinta si el api la contesta (administradores). */}
+      {(cargandoCruce || sinCruce || falloCruce) && (
+        <Card className="mb-6" id="productos-sin-cruce">
+          <CardHeader className="flex-col items-start gap-1">
+            <h2 className="text-lg font-semibold">Productos sin cruce con Ventra</h2>
+            <p className="text-sm text-default-500">
+              Productos de los pedidos de los últimos {sinCruce?.dias ?? 30} días que no se
+              encuentran en el catálogo de su sucursal ni por código ni por nombre: salen
+              sin precio ni peso. Corrige el nombre en el archivo, o crea un vínculo en
+              Productos.
+            </p>
+          </CardHeader>
+          <CardBody className="pt-0 overflow-x-auto">
+            {cargandoCruce ? (
+              <Spinner size="sm" />
+            ) : falloCruce || !sinCruce ? (
+              <p className="text-sm text-default-500">
+                No se pudo comprobar ahora. Vuelve a abrir esta pantalla en un momento.
+              </p>
+            ) : sinCruce.total === 0 ? (
+              <p className="text-sm text-success-600">
+                Todos los productos de los pedidos cruzan con Ventra.
+              </p>
+            ) : (
+              <Table removeWrapper aria-label="Productos sin cruce con Ventra">
+                <TableHeader>
+                  <TableColumn>Producto</TableColumn>
+                  <TableColumn>Código</TableColumn>
+                  <TableColumn>Sucursales</TableColumn>
+                  <TableColumn align="end">Líneas</TableColumn>
+                  <TableColumn>Último pedido</TableColumn>
+                </TableHeader>
+                <TableBody>
+                  {sinCruce.productos.map((p) => (
+                    <TableRow key={`${p.producto}|${p.code ?? ""}`}>
+                      <TableCell className="font-medium">{p.producto}</TableCell>
+                      <TableCell className="text-sm">
+                        {p.code ?? <span className="text-default-400">—</span>}
+                      </TableCell>
+                      <TableCell className="text-sm">{p.sucursales.join(", ")}</TableCell>
+                      <TableCell className="text-right tabular-nums">{p.lineas}</TableCell>
+                      <TableCell className="text-sm tabular-nums">{cuandoEnCuba(p.ultimo)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardBody>
+        </Card>
       )}
     </section>
   );

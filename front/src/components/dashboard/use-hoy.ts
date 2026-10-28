@@ -100,16 +100,19 @@ const pedir = async <T>(ruta: string): Promise<T> => {
 export function useHoy(opts: {
   verResumen: boolean;
   verRetenidos: boolean;
+  /** Sólo administradores: los productos de pedidos que no cruzan con Ventra. */
+  verCruce?: boolean;
   /** Hay una sucursal concreta elegida: sólo entonces existe «su» regla. */
   hayRegla: boolean;
 }) {
-  const { verResumen, verRetenidos, hayRegla } = opts;
+  const { verResumen, verRetenidos, hayRegla, verCruce = false } = opts;
   const dia = useDiaDeCuba();
   const [resumen, setResumen] = useState<ResumenHoy | null>(null);
   // Lo de AYER: otra consulta, el día que acaba de terminar en Cuba.
   const [ayer, setAyer] = useState<ResumenHoy | null>(null);
   const [errorAyer, setErrorAyer] = useState<string | null>(null);
   const [retenidos, setRetenidos] = useState<RetenidosHoy | null>(null);
+  const [sinCruce, setSinCruce] = useState(0);
   const [regla, setRegla] = useState<ReglaHoy | null>(null);
   const [cargando, setCargando] = useState(verResumen || verRetenidos);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +125,7 @@ export function useHoy(opts: {
         setError(null);
       }
 
-      const [r, o, c, a] = await Promise.allSettled([
+      const [r, o, c, a, x] = await Promise.allSettled([
         verResumen
           ? pedir<ResumenHoy>("/facturacion/resumen")
           : Promise.resolve(null),
@@ -135,12 +138,17 @@ export function useHoy(opts: {
         verResumen
           ? pedir<ResumenHoy>(`/facturacion/resumen?dia=${diaAnterior(dia)}`)
           : Promise.resolve(null),
+        verCruce
+          ? pedir<{ total: number }>("/facturacion/productos-sin-cruce")
+          : Promise.resolve(null),
       ]);
 
       // Una recarga de fondo que falla deja lo que ya se veía (como el resto del panel).
       if (r.status === "fulfilled") setResumen(r.value);
       if (o.status === "fulfilled") setRetenidos(o.value?.retenidos ?? null);
       if (c.status === "fulfilled") setRegla(c.value);
+      // Un fallo aquí (p. ej. 403) no se enseña: simplemente no hay aviso.
+      if (x.status === "fulfilled") setSinCruce(x.value?.total ?? 0);
       if (a.status === "fulfilled") {
         setAyer(a.value);
         setErrorAyer(null);
@@ -163,7 +171,7 @@ export function useHoy(opts: {
       }
       if (!fondo) setCargando(false);
     },
-    [verResumen, verRetenidos, hayRegla, dia],
+    [verResumen, verRetenidos, hayRegla, verCruce, dia],
   );
 
   // Al cambiar el día (o los permisos) se vuelve a pedir TODO, y lo de ayer no se queda a la vista.
@@ -189,6 +197,7 @@ export function useHoy(opts: {
     resumen,
     ayer,
     errorAyer,
+    sinCruce,
     retenidos,
     regla,
     cargando,

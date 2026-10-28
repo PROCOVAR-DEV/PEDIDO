@@ -455,6 +455,7 @@ export function Resumen({
   errorTotales,
   onReintentarTotales,
   verCotejo,
+  sinCruce = 0,
   entre,
   tituloTotales = "Pedidos en total",
   anioTotales,
@@ -473,6 +474,8 @@ export function Resumen({
   onReintentarTotales: () => void;
   /** Ve el estado interno del cotejo (y la pantalla de Facturación): sólo administradores. */
   verCotejo: boolean;
+  /** Productos de pedidos que no cruzan con Ventra (sólo lo pide quien ve el cotejo). */
+  sinCruce?: number;
   /** Lo que va entre el resumen diario y los totales (el bloque de ayer). */
   entre?: ReactNode;
   tituloTotales?: string;
@@ -560,10 +563,26 @@ export function Resumen({
                 </span>
               </h2>
               {verCotejo && resumen && (
-                <p className="text-xs text-default-500">
-                  {pasada
-                    ? `Facturas comprobadas ${haceCuanto(pasada.cuando)}`
-                    : "Sin comprobación de facturas reciente"}
+                <p className="flex flex-wrap items-baseline gap-x-3 text-xs text-default-500">
+                  <span>
+                    {pasada
+                      ? `Facturas comprobadas ${haceCuanto(pasada.cuando)}`
+                      : "Sin comprobación de facturas reciente"}
+                  </span>
+                  {sinCruce > 0 && (
+                    <span className="text-warning-600">
+                      {sinCruce === 1
+                        ? "1 producto de pedidos sin cruce con Ventra"
+                        : `${sinCruce} productos de pedidos sin cruce con Ventra`}{" "}
+                      <Link
+                        aria-label="Ver los productos sin cruce con Ventra"
+                        className="text-xs"
+                        href="/panel/sincronizacion/facturacion#productos-sin-cruce"
+                      >
+                        Ver
+                      </Link>
+                    </span>
+                  )}
                 </p>
               )}
             </div>

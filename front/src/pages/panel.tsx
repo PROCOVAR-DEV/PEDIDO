@@ -124,7 +124,15 @@ export default function PanelPage() {
   const activeSucursalId = session?.isGlobalAdmin
     ? getSucursalActiva()
     : session?.sucursalId;
+  // El estado interno del cotejo (cuándo se comprobó, qué sucursal falló, qué productos no
+  // cruzan) y el enlace a Facturación, que es donde se ve: sólo Administrador, Super Admin
+  // y Desarrollador. Para el resto ni se pide.
+  const verCotejo =
+    !!session?.isGlobalAdmin ||
+    esRolGlobal(user?.role) ||
+    rol === "ADMINISTRADOR";
   const hoy = useHoy({
+    verCruce: verCotejo && ve.has("hoy"),
     verResumen: ve.has("hoy"),
     verRetenidos: ve.has("retenidos"),
     hayRegla: !!activeSucursalId,
@@ -293,13 +301,6 @@ export default function PanelPage() {
 
   const dato = ve.has("hoy") ? (hoy.resumen?.totales.total ?? null) : null;
 
-  // El estado interno del cotejo (cuándo se comprobó, qué sucursal falló) y el enlace a
-  // Facturación, que es donde se ve: sólo Administrador, Super Admin y Desarrollador.
-  const verCotejo =
-    !!session?.isGlobalAdmin ||
-    esRolGlobal(user?.role) ||
-    rol === "ADMINISTRADOR";
-
   // ALTURA: en escritorio (xl) el panel ocupa EXACTAMENTE la ventana y no hay scroll.
   // El armazón (layouts/panel.tsx) reserva `lg:py-16` (64 px arriba y abajo); aquí se
   // recuperan 48 de cada lado (-mt-12 / -mb-12) y la altura es la de la ventana menos los
@@ -407,6 +408,7 @@ export default function PanelPage() {
               error={hoy.error}
               errorTotales={error}
               resumen={hoy.resumen}
+              sinCruce={hoy.sinCruce}
               tituloTotales={
                 selectedYear ? `Pedidos de ${selectedYear}` : "Pedidos en total"
               }

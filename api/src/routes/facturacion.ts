@@ -5,6 +5,7 @@ import { estadoDeFactura, HORA_CORTE, type EstadoFactura } from '../lib/corteFac
 import { leerUltimaPasada, soloErroresSostenidos } from '../lib/cotejoEstado';
 import { extremosDelDia, hoyEnCuba } from '../lib/diaCubano';
 import { soloVisibles } from '../lib/liberacionPedidos';
+import { catalogosDeSucursales } from '../lib/catalogoSucursal';
 import { getRequesterContext, resolveSucursalFilter } from '../lib/sucursalContext';
 
 /**
@@ -294,6 +295,58 @@ router.get('/pedidos', async (req, res) => {
     paginas: Math.max(1, Math.ceil(conEstado.length / porPagina)),
     pedidos: conEstado.slice(desde, desde + porPagina),
   });
+});
+
+/**
+ * PRODUCTOS DE PEDIDOS QUE NO CRUZAN CON VENTRA, para que no se vuelva a caer uno en silencio.
+ *
+ * Un producto que no cruza sale «sin precio, sin peso, no hay en esta sucursal» y no falla nada: lo vio
+ * una sucursal con el panel Jinko («625W» contra «625 W») y con la servilleta («Azahar» contra «Azanar»).
+ * Aquí se listan los productos distintos de los pedidos de los últimos 30 días que ni por código ni por
+ * nombre encuentran su fila en el catálogo de su sucursal. Lo normal es que esté VACÍO.
+ */
+router.get('/productos-sin-cruce', async (req, res) => {
+  const quien = getRequesterContext(req);
+
+  // Es una comprobación de la casa: Administrador, Super Admin y Desarrollador.
+  if (!quien.canManageUsers && !quien.isGlobalAdmin) {
+    return res.status(403).json({ error: 'Solo un administrador puede ver los productos sin cruce con Ventra.' });
+  }
+
+  const { sucursalId, error, status } = resolveSucursalFilter(req);
+
+  if (error) return res.status(status ?? 400).json({ error });
+
+  const filas = await prisma.$queryRaw<
+    Array<{ sucursalId: string; sucursal: string; producto: string; code: string | null; lineas: number; ultimo: Date }>
+  >`
+    select o."sucursalId" as "sucursalId", s.codigo as sucursal, i.producto, i.code,
+           count(*)::int as lineas, max(o.fecha) as ultimo
+      from "OrderItem" i
+      join "Order" o on o.id = i."orderId"
+      join "Sucursal" s on s.id = o."sucursalId"
+     where o.fecha >= now() - interval '30 days'
+       and i.producto is not null and i.producto <> ''
+       and (${sucursalId ?? null}::text is null or o."sucursalId" = ${sucursalId ?? null})
+     group by 1, 2, 3, 4`;
+
+  const catalogos = await catalogosDeSucursales(filas.map((f) => f.sucursalId));
+  const sinCruce = new Map<string, { producto: string; code: string | null; sucursales: string[]; lineas: number; ultimo: Date }>();
+
+  for (const f of filas) {
+    if (catalogos.get(f.sucursalId)?.buscar(f.producto, f.code)) continue;
+    const k = `${f.producto}|${f.code ?? ''}`;
+    const a = sinCruce.get(k) ?? { producto: f.producto, code: f.code, sucursales: [], lineas: 0, ultimo: f.ultimo };
+
+    a.sucursales.push(f.sucursal);
+    a.lineas += f.lineas;
+    if (f.ultimo > a.ultimo) a.ultimo = f.ultimo;
+    sinCruce.set(k, a);
+  }
+
+  const productos = [...sinCruce.values()].sort((a, b) => b.lineas - a.lineas);
+
+  return res.json({ dias: 30, total: productos.length, productos });
 });
 
 export default router;
