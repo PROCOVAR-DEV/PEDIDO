@@ -6,7 +6,7 @@ import { Button, Card, CardBody, Link, Skeleton } from "@heroui/react";
 import { diaAnterior } from "./use-hoy";
 
 import Icons from "@/components/icons/iconify";
-import { hora12 } from "@/lib/hora12";
+import { cuandoEnCuba, hora12 } from "@/lib/hora12";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,21 +18,45 @@ export function AvisoLiberacionFranja({ aviso }: { aviso: AvisoLiberacion }) {
 
   const a = hora12(aviso.primera);
   const b = hora12(aviso.segunda);
+  const noche = aviso.modo === "noche";
+  const entrando = aviso.estado === "entrando";
+  const cuando = aviso.hasta ? cuandoEnCuba(aviso.hasta) : `a las ${b}`;
+
+  // Cuatro textos: noche/día × entrando/esperando. Sin `estado` (api viejo) se queda el de siempre.
+  const texto =
+    aviso.estado === undefined
+      ? noche
+        ? `los pedidos se cierran a las ${a} y se reabren a las ${b}. Lo que se suba entre esas horas se ve a las ${b}.`
+        : `los pedidos de hoy que se suban antes de las ${b} se ven a las ${b}; después, en el acto.`
+      : noche
+        ? entrando
+          ? `los pedidos están entrando con normalidad. Se cierran a las ${a}.`
+          : `los pedidos están cerrados. Se reabren ${cuando}; lo que se suba hasta entonces se ve a esa hora.`
+        : entrando
+          ? "los pedidos están entrando y se ven en el acto."
+          : `los pedidos de hoy están en espera hasta ${cuando.replace(/^a /, "")}. Lo que se suba antes se ve a esa hora.`;
 
   return (
     <div
-      className="flex min-h-8 items-center gap-2 rounded-lg border border-warning-200 bg-warning-50/50 px-3 py-1 text-sm text-default-700"
+      className={cn(
+        "flex min-h-8 items-center gap-2 rounded-lg border px-3 py-1 text-sm text-default-700",
+        entrando
+          ? "border-success-200 bg-success-50/50"
+          : "border-warning-200 bg-warning-50/50",
+      )}
       role="note"
     >
-      <Icons.calendar
-        aria-hidden
-        className="size-4 shrink-0 text-warning-600"
-      />
+      {entrando ? (
+        <Icons.check aria-hidden className="size-4 shrink-0 text-success-600" />
+      ) : (
+        <Icons.calendar
+          aria-hidden
+          className="size-4 shrink-0 text-warning-600"
+        />
+      )}
       <span className="min-w-0">
         <strong className="font-semibold">{aviso.sucursalNombre}</strong>:{" "}
-        {aviso.modo === "noche"
-          ? `los pedidos se cierran a las ${a} y se reabren a las ${b}. Lo que se suba entre esas horas se ve a las ${b}.`
-          : `los pedidos de hoy que se suban antes de las ${b} se ven a las ${b}; después, en el acto.`}
+        {texto}
       </span>
     </div>
   );

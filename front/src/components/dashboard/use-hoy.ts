@@ -51,6 +51,10 @@ export interface AvisoLiberacion {
   primera?: string;
   /** La segunda hora (`hoyDesde`): cuándo se ve lo guardado. */
   segunda?: string;
+  /** Si los pedidos están entrando o esperando AHORA, según la hora. */
+  estado?: "entrando" | "esperando";
+  /** Cuándo salen los pedidos que entren ahora (ISO); sólo con `esperando`. */
+  hasta?: string | null;
 }
 
 /** El día `AAAA-MM-DD` que es ahora en Cuba, que es donde están las sucursales y donde cambia el día. */
@@ -207,6 +211,28 @@ export function useHoy(opts: {
   }, [cargar]);
 
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // El aviso de la regla cambia SOLO con la hora (entrando ↔ esperando): se vuelve a pedir
+  // cada minuto y al volver a la pestaña. Es un endpoint barato y no toca lo demás.
+  useEffect(() => {
+    const pedirAviso = () =>
+      pedir<AvisoLiberacion>("/liberacion/aviso")
+        .then((v) => setAviso(v?.activa ? v : null))
+        .catch(() => undefined);
+    const alVolver = () => {
+      if (document.visibilityState === "visible") pedirAviso();
+    };
+    const t = setInterval(pedirAviso, 60_000);
+
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("focus", pedirAviso);
+
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("focus", pedirAviso);
+    };
+  }, []);
 
   return {
     dia,

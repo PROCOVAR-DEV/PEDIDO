@@ -42,6 +42,7 @@ import { contadorDeFacturas, lineasDeEntrega } from "../../lib/entregas-de-factu
 import { cn, copyTextToClipboard } from "@/lib/utils";
 import { registrarCopia } from "@/lib/registrar-copia";
 import { esFechaEnviable } from "@/lib/fecha-enviable";
+import { hora12 } from "@/lib/hora12";
 import { BarraEntrando } from "@/components/pedidos/barra-entrando";
 import { getApiBaseUrl } from "@/config";
 import {
@@ -223,6 +224,37 @@ const horaEnCuba = (iso: string) =>
     minute: "2-digit",
     hourCycle: "h23",
   }).format(new Date(iso));
+
+/**
+ * Cuándo sale un pedido retenido, como lo diría una persona: «a las 3:00 PM» si es hoy (hora
+ * de Cuba), «mañana a las 8:00 AM» si es mañana, «el jueves a las 8:00 AM» si es más tarde.
+ */
+const cuandoSale = (iso: string) => {
+  const dia = (d: Date) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Havana",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  const sale = new Date(iso);
+  const dias = Math.round(
+    (new Date(`${dia(sale)}T12:00:00Z`).getTime() -
+      new Date(`${dia(new Date())}T12:00:00Z`).getTime()) /
+      86_400_000,
+  );
+  const hora = `a las ${hora12(horaEnCuba(iso))}`;
+
+  if (dias <= 0) return hora;
+  if (dias === 1) return `mañana ${hora}`;
+
+  const semana = new Intl.DateTimeFormat("es-ES", {
+    timeZone: "America/Havana",
+    weekday: "long",
+  }).format(sale);
+
+  return `el ${semana} ${hora}`;
+};
 
 /**
  * Las líneas de la factura, que se guardan en TEXTO.
@@ -567,10 +599,13 @@ const fechaDeLaUrl = (clave: string): string => {
 export const OrdersList = ({
   soloRetenidos: fijo = false,
   junto,
+  debajoDeFiltros,
 }: {
   soloRetenidos?: boolean;
   /** Algo que va EN LA MISMA FILA que la tarjeta de filtros (a su izquierda). */
   junto?: ReactNode;
+  /** Algo de ancho completo justo debajo de la fila de filtros (la explicación de Liberación). */
+  debajoDeFiltros?: ReactNode;
 }) => {
   const [page, setPage] = useState(1);
   const [estadosSel, setEstadosSel] = useState<string[]>(() => listaDeLaUrl("estado", estadoOptions));
@@ -1923,6 +1958,7 @@ export const OrdersList = ({
         </CardBody>
       </Card>
       </div>
+      {debajoDeFiltros}
 
       {/* LO QUE ESTÁ ENTRANDO, donde antes sólo ponía "En vivo".
           "En vivo" decía que la conexión estaba abierta, no que estuvieran entrando datos
@@ -2057,7 +2093,8 @@ export const OrdersList = ({
                           size="sm"
                           variant="flat"
                         >
-                          Retenido hasta {horaEnCuba(order.visibleDesde!)}
+                          En espera hasta{" "}
+                          {cuandoSale(order.visibleDesde!).replace(/^a /, "")}
                         </Chip>
                       )}
                       {!fijo && chipDeFactura(order) && (
@@ -2150,6 +2187,13 @@ export const OrdersList = ({
                       </div>
                     )}
                   </div>
+                  {estaRetenido(order) && (
+                    <p className="text-xs text-default-500">
+                      Tu pedido llegó bien. Pasa a facturación{" "}
+                      {cuandoSale(order.visibleDesde!)}.
+                      {puedeLiberar && " Puedes liberarlo ahora."}
+                    </p>
+                  )}
                   <div className="grid items-start justify-between w-full grid-cols-1 gap-4 md:grid-cols-4">
                     <div className="flex items-center gap-2">
                       <Icons.receipt className="size-12 min-w-12 text-primary" />
@@ -2439,6 +2483,31 @@ export const OrdersList = ({
               </EnvaseCabecera>
               <EnvaseCuerpo>
                 <div className="flex flex-col gap-4">
+                  {selectedOrder && estaRetenido(selectedOrder) && (
+                    <div
+                      className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm text-default-700"
+                      role="note"
+                    >
+                      <svg
+                        aria-hidden
+                        className="mt-0.5 size-5 shrink-0 text-warning-600"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        viewBox="0 0 24 24"
+                      >
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M12 7v5l3 2" />
+                      </svg>
+                      <p>
+                        Este pedido está guardado y espera para pasar a facturación{" "}
+                        {cuandoSale(selectedOrder.visibleDesde!)}. Hasta entonces
+                        facturación no lo ve; tú sí.
+                      </p>
+                    </div>
+                  )}
                   {/* Vendedor y Cliente */}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="flex items-start gap-3 p-3 rounded-xl bg-default-100">

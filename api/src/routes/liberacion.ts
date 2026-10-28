@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import prisma from '../prismaClient';
 import { getRequesterContext, resolveSucursalScope } from '../lib/sucursalContext';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { esCierreNocturno, horaDeMinutos, minutosDeHora } from '../lib/liberacionPedidos';
+import { esCierreNocturno, horaDeMinutos, minutosDeHora, visibleDesde } from '../lib/liberacionPedidos';
 import { olvidarReglas } from '../lib/liberacionRegla';
 import { puedeReasignar } from '../lib/reasignarCliente';
 
@@ -56,7 +56,19 @@ router.get('/aviso', async (req: AuthRequest, res: Response) => {
 
   const r = reglaJson(s);
 
-  return res.json({ activa: true, sucursalNombre: r.sucursalNombre, modo: r.modo, primera: r.ayerHasta, segunda: r.hoyDesde });
+  // ¿Un pedido que entrara AHORA se vería en el acto (entrando) o tendría que esperar (esperando, y hasta cuándo)?
+  const ahora = new Date();
+  const hasta = visibleDesde(ahora, ahora, { activa: true, ayerHasta: s.liberacionAyerHasta, hoyDesde: s.liberacionHoyDesde });
+
+  return res.json({
+    activa: true,
+    sucursalNombre: r.sucursalNombre,
+    modo: r.modo,
+    primera: r.ayerHasta,
+    segunda: r.hoyDesde,
+    estado: hasta ? 'esperando' : 'entrando',
+    hasta: hasta ? hasta.toISOString() : null,
+  });
 });
 
 router.get('/', async (req: AuthRequest, res: Response) => {
