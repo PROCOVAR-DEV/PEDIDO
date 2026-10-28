@@ -11,6 +11,8 @@ import { normalizarProducto, variantesProducto, porContenido } from './nombrePro
 
 export interface FilaCatalogo {
   nombre: string;
+  /** El código de Ventra del producto (`TECN0032`). Es lo que cruza cuando los nombres no coinciden. */
+  sku?: string | null;
   precio: number | null;
   pesoKg: number | null;
   stock: number | null;
@@ -18,7 +20,7 @@ export interface FilaCatalogo {
 
 export interface CatalogoSucursal {
   /** La fila de Ventra que corresponde a ese nombre de Parranda, o `undefined`. */
-  buscar(producto: string | null | undefined): FilaCatalogo | undefined;
+  buscar(producto: string | null | undefined, codigo?: string | null): FilaCatalogo | undefined;
 }
 
 /**
@@ -34,6 +36,7 @@ function juntar(previo: FilaCatalogo | undefined, fila: FilaCatalogo): FilaCatal
   if (!previo) return fila;
   return {
     nombre: previo.nombre,
+    sku: previo.sku ?? fila.sku,
     precio: previo.precio ?? fila.precio,
     pesoKg: previo.pesoKg ?? fila.pesoKg,
     stock: previo.stock ?? fila.stock,
@@ -73,15 +76,34 @@ function sinPesosDeCero(f: FilaCatalogo): FilaCatalogo {
 
 export function indexarCatalogo(filas: FilaCatalogo[], vinculos: Map<string, string>): CatalogoSucursal {
   const porNombre = new Map<string, FilaCatalogo>();
+  const porSku = new Map<string, FilaCatalogo>();
   for (const cruda of filas) {
     const f = sinPesosDeCero(cruda);
     const k = normalizarProducto(f.nombre);
     porNombre.set(k, juntar(porNombre.get(k), f));
+    if (f.sku) porSku.set(f.sku.trim().toUpperCase(), juntar(porSku.get(f.sku.trim().toUpperCase()), f));
   }
   const claves = [...porNombre.keys()];
 
   return {
-    buscar(producto) {
+    buscar(producto, codigo) {
+      if (!producto && !codigo) return undefined;
+      const variantes0 = producto ? variantesProducto(producto) : [];
+      const aMano0 = variantes0.map((k) => vinculos.get(k)).find(Boolean);
+      // El vínculo hecho a mano manda sobre todo, también sobre el código.
+      if (aMano0 && porNombre.has(aMano0)) return porNombre.get(aMano0);
+
+      /**
+       * El CÓDIGO antes que el nombre.
+       *
+       * El pedido trae el código de Ventra de cada línea (`TECN0032`) y el nombre escrito por
+       * Parranda, y los nombres se desvían de formas que ninguna normalización cubre: «625W» contra
+       * «625 W», o «AZAHAR» contra «AZANAR» (un fallo de letra de Ventra). Dos productos reales
+       * —el panel Jinko y la servilleta— salían «sin precio, sin peso, no hay en esta sucursal»
+       * estando en el catálogo de la sucursal con su stock. El código es el mismo en las dos.
+       */
+      const porCodigo = codigo ? porSku.get(codigo.trim().toUpperCase()) : undefined;
+      if (porCodigo) return porCodigo;
       if (!producto) return undefined;
       // Se prueban las formas posibles de ese nombre, de la más fiel a la más
       // permisiva, y se para en la primera que exista. El vínculo a mano va PRIMERO:

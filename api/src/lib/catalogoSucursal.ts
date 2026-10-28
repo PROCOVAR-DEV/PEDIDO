@@ -43,7 +43,7 @@ export async function catalogoDeSucursal(sucursalId: string): Promise<CatalogoSu
   const [filas, vinculos] = await Promise.all([
     prisma.productoSucursal.findMany({
       where: { sucursalId },
-      select: { nombre: true, precio: true, pesoKg: true, stock: true },
+      select: { nombre: true, sku: true, precio: true, pesoKg: true, stock: true },
     }),
     leerVinculos(),
   ]);
@@ -67,7 +67,7 @@ export async function catalogosDeSucursales(
   for (const sucursalId of ids) {
     const filas = await prisma.productoSucursal.findMany({
       where: { sucursalId },
-      select: { nombre: true, precio: true, pesoKg: true, stock: true },
+      select: { nombre: true, sku: true, precio: true, pesoKg: true, stock: true },
     });
     out.set(sucursalId, indexarCatalogo(filas, vinculos));
   }

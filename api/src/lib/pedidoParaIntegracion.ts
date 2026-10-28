@@ -125,8 +125,8 @@ function lineasDeFactura(p: { lineasFactura?: string | null }): Array<{
  * los de toda una página en vez de uno por pedido.
  */
 export function mapearParaIntegracion(pedidos: any[], catalogos: Map<string, any>) {
-  const filaDe = (sucursalId: string | null, producto: string | null) =>
-    sucursalId ? catalogos.get(sucursalId)?.buscar(producto) : undefined;
+  const filaDe = (sucursalId: string | null, producto: string | null, codigo?: string | null) =>
+    sucursalId ? catalogos.get(sucursalId)?.buscar(producto, codigo) : undefined;
 
   return pedidos.map((p: any) => ({
     id: p.id,
@@ -262,7 +262,7 @@ export function mapearParaIntegracion(pedidos: any[], catalogos: Map<string, any
      */
     itemsOrigen: lineasDeFactura(p) ? 'factura' : 'pedido',
     items: (lineasDeFactura(p) ?? p.items).map((i) => {
-      const fila = filaDe(p.sucursalId, i.producto);
+      const fila = filaDe(p.sucursalId, i.producto, i.code);
       /**
        * DOS pesos, y con nombres que dicen cuál es cuál.
        *

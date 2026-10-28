@@ -30,8 +30,9 @@ export function normalizarProducto(nombre: string): string {
     // productos de la casa, que sí tienen precio en Ventra—.
     .replace(/(\d+(?:[.,]\d+)?)\s*L\b/g, (_m, n: string) =>
       `${Math.round(parseFloat(n.replace(',', '.')) * 1000)} ML`)
-    // La unidad pegada al número es la otra diferencia: 25KG / 15M.
-    .replace(/(\d)\s*(KG|ML|LT|G|M|U)\b/g, '$1 $2')
+    // La unidad pegada al número es la otra diferencia: 25KG / 15M / 625W (los vatios de un
+    // panel solar: Parranda «625W», Ventra «625 W»).
+    .replace(/(\d)\s*(KG|ML|LT|G|M|U|W)\b/g, '$1 $2')
     .replace(/[^A-Z0-9 ]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

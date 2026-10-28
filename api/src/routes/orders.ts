@@ -92,7 +92,7 @@ type PedidoConLineas = {
   costoDomicilio: number | null;
   estado: string | null;
   fecha_comprometida: Date | null;
-  items: Array<{ producto: string; unidades: number; packs: number | null }>;
+  items: Array<{ producto: string; code?: string | null; unidades: number; packs: number | null }>;
 };
 
 export async function conPrecios<T extends PedidoConLineas>(pedido: T) {
@@ -114,7 +114,7 @@ export async function conPrecios<T extends PedidoConLineas>(pedido: T) {
   let total = 0;
   let sinPrecio = 0;
   const items = pedido.items.map((i) => {
-    const c = catalogo.buscar(i.producto);
+    const c = catalogo.buscar(i.producto, i.code);
     const precioUnidad = c?.precio ?? null;
     // El precio de Ventra es por UNIDAD DE VENTA (el pack/caja), igual que el peso.
     // Multiplicarlo por las unidades sueltas daría un total disparatado.
