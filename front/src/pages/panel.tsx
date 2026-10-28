@@ -13,6 +13,7 @@ import {
 } from "@/components/dashboard/acceso-rapido";
 import {
   Ayer,
+  AvisoLiberacionFranja,
   FranjaTotales,
   Resumen,
   fechaDeHoy,
@@ -183,7 +184,9 @@ export default function PanelPage() {
             .map((x) => `${x.sucursal} ${x.total}`)
             .join(", ")
         : regla?.activa
-          ? `Se liberan a las ${regla.hoyDesde}`
+          ? regla.modo === "noche"
+            ? `Se reabren a las ${regla.hoyDesde}`
+            : `Se liberan a las ${regla.hoyDesde}`
           : "Esperando su hora de liberación"
       : regla && !regla.activa
         ? "La regla está apagada"
@@ -314,7 +317,9 @@ export default function PanelPage() {
         "flex flex-col gap-4 xl:-mb-12 xl:-mt-12 xl:grid xl:h-[calc(100dvh-2rem)] xl:gap-3",
         ve.has("hoy")
           ? "xl:grid-rows-[auto_auto_auto] xl:content-start"
-          : "xl:grid-rows-[auto_auto_auto_minmax(0,1fr)]",
+          : hoy.aviso
+            ? "xl:grid-rows-[auto_auto_auto_auto_minmax(0,1fr)]"
+            : "xl:grid-rows-[auto_auto_auto_minmax(0,1fr)]",
       )}
     >
       {/* Cabecera de UNA línea. */}
@@ -345,6 +350,9 @@ export default function PanelPage() {
           </Button>
         </div>
       </header>
+
+      {/* Aviso de la regla de liberación de SU sucursal (todos los roles), una línea fina. */}
+      {hoy.aviso && <AvisoLiberacionFranja aviso={hoy.aviso} />}
 
       {/* 1. LOS ACCESOS: lo principal del panel. */}
       <nav

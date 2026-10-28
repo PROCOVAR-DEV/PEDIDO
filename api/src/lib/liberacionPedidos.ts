@@ -1,4 +1,4 @@
-import { diaEnCuba, inicioDelDia, minutosEnCuba } from './diaCubano';
+import { diaEnCuba, diaSiguiente, inicioDelDia, minutosEnCuba } from './diaCubano';
 
 /**
  * Liberación de pedidos por hora: cuándo se hace VISIBLE un pedido para facturación.
@@ -22,9 +22,31 @@ export type ReglaLiberacion = {
 
 export const REGLA_APAGADA: ReglaLiberacion = { activa: false, ayerHasta: 510, hoyDesde: 900 };
 
+/** El MODO sale del orden de las dos horas: la primera antes que la segunda es «de día»; la primera después, «cierre nocturno». */
+export const esCierreNocturno = (r: Pick<ReglaLiberacion, 'ayerHasta' | 'hoyDesde'>) => r.ayerHasta > r.hoyDesde;
+
+/**
+ * Cierre nocturno (La Habana: «cierran a las 15:00 y reabren a las 08:00»): la primera hora es la de CERRAR y la
+ * segunda la de REABRIR. Lo que entra con el cierre puesto se guarda y es visible a la hora de reabrir. La ventana
+ * cerrada es [cierra, abre) y cruza la medianoche; la fecha del pedido no cuenta, manda la hora a la que entra.
+ */
+function visibleDesdeNoche(ahora: Date, cierra: number, abre: number): Date | null {
+  const m = minutosEnCuba(ahora);
+
+  if (!(m >= cierra || m < abre)) return null;
+
+  // Madrugada (aún no ha llegado la hora de reabrir de HOY): hoy. Tarde-noche: mañana.
+  const hoy = diaEnCuba(ahora);
+  const inicio = inicioDelDia(m < abre ? hoy : diaSiguiente(hoy));
+
+  return inicio ? new Date(inicio.getTime() + abre * 60_000) : null;
+}
+
 /** Desde cuándo es visible el pedido; `null` = ya lo es. */
 export function visibleDesde(fecha: Date, ahora: Date, regla: ReglaLiberacion): Date | null {
   if (!regla.activa) return null;
+  if (regla.ayerHasta === regla.hoyDesde) return null;
+  if (esCierreNocturno(regla)) return visibleDesdeNoche(ahora, regla.ayerHasta, regla.hoyDesde);
 
   const hoy = diaEnCuba(ahora);
   const inicio = inicioDelDia(hoy);

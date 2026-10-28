@@ -38,6 +38,19 @@ export interface ReglaHoy {
   activa: boolean;
   ayerHasta: string;
   hoyDesde: string;
+  /** Derivado por el api del orden de las dos horas: de día o cierre nocturno. */
+  modo?: "dia" | "noche";
+}
+
+/** `GET /liberacion/aviso`: lo que cualquier usuario debe saber de la regla de SU sucursal. */
+export interface AvisoLiberacion {
+  activa: boolean;
+  sucursalNombre?: string;
+  modo?: "dia" | "noche";
+  /** La primera hora (`ayerHasta`): en cierre nocturno, cuándo cierra. */
+  primera?: string;
+  /** La segunda hora (`hoyDesde`): cuándo se ve lo guardado. */
+  segunda?: string;
 }
 
 /** El día `AAAA-MM-DD` que es ahora en Cuba, que es donde están las sucursales y donde cambia el día. */
@@ -113,19 +126,19 @@ export function useHoy(opts: {
   const [errorAyer, setErrorAyer] = useState<string | null>(null);
   const [retenidos, setRetenidos] = useState<RetenidosHoy | null>(null);
   const [sinCruce, setSinCruce] = useState(0);
+  const [aviso, setAviso] = useState<AvisoLiberacion | null>(null);
   const [regla, setRegla] = useState<ReglaHoy | null>(null);
   const [cargando, setCargando] = useState(verResumen || verRetenidos);
   const [error, setError] = useState<string | null>(null);
 
   const cargar = useCallback(
     async (fondo = false) => {
-      if (!verResumen && !verRetenidos) return;
       if (!fondo) {
         setCargando(true);
         setError(null);
       }
 
-      const [r, o, c, a, x] = await Promise.allSettled([
+      const [r, o, c, a, x, v] = await Promise.allSettled([
         verResumen
           ? pedir<ResumenHoy>("/facturacion/resumen")
           : Promise.resolve(null),
@@ -141,6 +154,8 @@ export function useHoy(opts: {
         verCruce
           ? pedir<{ total: number }>("/facturacion/productos-sin-cruce")
           : Promise.resolve(null),
+        // Para cualquier rol: la regla de liberación de SU sucursal, si está activa.
+        pedir<AvisoLiberacion>("/liberacion/aviso"),
       ]);
 
       // Una recarga de fondo que falla deja lo que ya se veía (como el resto del panel).
@@ -148,6 +163,7 @@ export function useHoy(opts: {
       if (o.status === "fulfilled") setRetenidos(o.value?.retenidos ?? null);
       if (c.status === "fulfilled") setRegla(c.value);
       // Un fallo aquí (p. ej. 403) no se enseña: simplemente no hay aviso.
+      if (v.status === "fulfilled") setAviso(v.value?.activa ? v.value : null);
       if (x.status === "fulfilled") setSinCruce(x.value?.total ?? 0);
       if (a.status === "fulfilled") {
         setAyer(a.value);
@@ -198,6 +214,7 @@ export function useHoy(opts: {
     ayer,
     errorAyer,
     sinCruce,
+    aviso,
     retenidos,
     regla,
     cargando,

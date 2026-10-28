@@ -1,12 +1,42 @@
 import type { ReactNode } from "react";
-import type { ResumenHoy } from "./use-hoy";
+import type { AvisoLiberacion, ResumenHoy } from "./use-hoy";
 
 import { Button, Card, CardBody, Link, Skeleton } from "@heroui/react";
 
 import { diaAnterior } from "./use-hoy";
 
 import Icons from "@/components/icons/iconify";
+import { hora12 } from "@/lib/hora12";
 import { cn } from "@/lib/utils";
+
+/**
+ * Franja fina de aviso para TODOS los roles de una sucursal con la regla de liberación
+ * activa: cuándo se cierran los pedidos y cuándo se ven. Una línea, tono ámbar suave.
+ */
+export function AvisoLiberacionFranja({ aviso }: { aviso: AvisoLiberacion }) {
+  if (!aviso.activa || !aviso.primera || !aviso.segunda) return null;
+
+  const a = hora12(aviso.primera);
+  const b = hora12(aviso.segunda);
+
+  return (
+    <div
+      className="flex min-h-8 items-center gap-2 rounded-lg border border-warning-200 bg-warning-50/50 px-3 py-1 text-sm text-default-700"
+      role="note"
+    >
+      <Icons.calendar
+        aria-hidden
+        className="size-4 shrink-0 text-warning-600"
+      />
+      <span className="min-w-0">
+        <strong className="font-semibold">{aviso.sucursalNombre}</strong>:{" "}
+        {aviso.modo === "noche"
+          ? `los pedidos se cierran a las ${a} y se reabren a las ${b}. Lo que se suba entre esas horas se ve a las ${b}.`
+          : `los pedidos de hoy que se suban antes de las ${b} se ven a las ${b}; después, en el acto.`}
+      </span>
+    </div>
+  );
+}
 
 /** «hace 4 minutos», como en la pantalla de Facturación. */
 export const haceCuanto = (iso: string) => {

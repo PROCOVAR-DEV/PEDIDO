@@ -90,6 +90,9 @@ const siguiente = (dia: string) => {
   return d.toISOString().slice(0, 10);
 };
 
+/** El día siguiente, `AAAA-MM-DD`. */
+export const diaSiguiente = (dia: string) => siguiente(dia);
+
 /** Del día `AAAA-MM-DD` en Cuba: desde su primer instante hasta el último. */
 export function extremosDelDia(dia: string): { desde: Date; hasta: Date } | null {
   const desde = inicioDelDia(dia);

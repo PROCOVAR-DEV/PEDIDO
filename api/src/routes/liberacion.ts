@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import prisma from '../prismaClient';
 import { getRequesterContext, resolveSucursalScope } from '../lib/sucursalContext';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { horaDeMinutos, minutosDeHora } from '../lib/liberacionPedidos';
+import { esCierreNocturno, horaDeMinutos, minutosDeHora } from '../lib/liberacionPedidos';
 import { olvidarReglas } from '../lib/liberacionRegla';
 import { puedeReasignar } from '../lib/reasignarCliente';
 
@@ -13,6 +13,9 @@ const router = Router();
  * poder tocar también los Supervisores y los Gerentes de su sucursal, sin entrar ahí.
  */
 router.use(authenticateToken, (req: AuthRequest, res: Response, next: NextFunction) => {
+  // El AVISO (qué horario rige en tu sucursal) lo lee cualquier usuario: es lo que se enseña en su panel.
+  if (req.method === 'GET' && req.path === '/aviso') return next();
+
   const ctx = getRequesterContext(req);
 
   if (!puedeReasignar(ctx.role, ctx.isGlobalAdmin)) {
@@ -34,6 +37,26 @@ const reglaJson = (s: { id: string; nombre: string; liberacionActiva: boolean; l
   activa: s.liberacionActiva,
   ayerHasta: horaDeMinutos(s.liberacionAyerHasta),
   hoyDesde: horaDeMinutos(s.liberacionHoyDesde),
+  // Lo deduce el orden de las dos horas (primera antes que segunda = «dia»; después = «noche»): no se guarda aparte.
+  modo: esCierreNocturno({ ayerHasta: s.liberacionAyerHasta, hoyDesde: s.liberacionHoyDesde }) ? 'noche' : 'dia',
+});
+
+/**
+ * El horario que rige en la sucursal de ESTE usuario, para el aviso del panel. Solo la suya (un Super Admin
+ * sin sucursal elegida no recibe nada). Sin la regla activa: `{ activa: false }`.
+ */
+router.get('/aviso', async (req: AuthRequest, res: Response) => {
+  const { sucursalId, error } = resolveSucursalScope(req, { allowAllForAdmin: false, preferUserSucursal: true, defaultAllForAdmin: false });
+
+  if (error || !sucursalId) return res.json({ activa: false });
+
+  const s = await prisma.sucursal.findUnique({ where: { id: sucursalId } });
+
+  if (!s || !s.liberacionActiva || s.liberacionAyerHasta === s.liberacionHoyDesde) return res.json({ activa: false });
+
+  const r = reglaJson(s);
+
+  return res.json({ activa: true, sucursalNombre: r.sucursalNombre, modo: r.modo, primera: r.ayerHasta, segunda: r.hoyDesde });
 });
 
 router.get('/', async (req: AuthRequest, res: Response) => {
@@ -61,8 +84,9 @@ router.put('/', async (req: AuthRequest, res: Response) => {
 
   if (typeof activa !== 'boolean') return res.status(400).json({ error: 'Falta decir si la regla está activa.' });
   if (ayerHasta == null || hoyDesde == null) return res.status(400).json({ error: 'Las horas van como HH:MM (por ejemplo 08:30).' });
-  if (ayerHasta >= hoyDesde) {
-    return res.status(400).json({ error: 'La hora hasta la que se aceptan los de ayer tiene que ser anterior a la de liberar los de hoy.' });
+  // Primera antes que segunda = de día (Camagüey); primera después = cierre nocturno (La Habana: cierra a las 15:00, reabre a las 08:00).
+  if (ayerHasta === hoyDesde) {
+    return res.status(400).json({ error: 'Las dos horas no pueden ser la misma.' });
   }
 
   const s = await prisma.sucursal.update({

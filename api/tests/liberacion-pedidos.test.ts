@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { horaDeMinutos, minutosDeHora, soloVisibles, visibleDesde } from '../src/lib/liberacionPedidos';
+import { esCierreNocturno, horaDeMinutos, minutosDeHora, soloVisibles, visibleDesde } from '../src/lib/liberacionPedidos';
 
 const REGLA = { activa: true, ayerHasta: 510, hoyDesde: 900 };
 // Cuba va a UTC-4 en octubre: 08:00 en Cuba = 12:00Z.
@@ -67,4 +67,37 @@ test('horas HH:MM', () => {
 test('soloVisibles deja pasar lo nulo y lo ya liberado', () => {
   const ahora = new Date('2026-10-27T19:00:00Z');
   assert.deepEqual(soloVisibles(ahora), { OR: [{ visibleDesde: null }, { visibleDesde: { lte: ahora } }] });
+});
+
+// ---- cierre nocturno (La Habana): la primera hora es MAYOR que la segunda: cierra 15:00, reabre 08:00 ----
+const NOCHE = { activa: true, ayerHasta: 900, hoyDesde: 480 };
+const m27 = '2026-10-27';
+const m28 = '2026-10-28';
+
+test('el modo sale del orden de las horas', () => {
+  assert.equal(esCierreNocturno({ ayerHasta: 510, hoyDesde: 900 }), false);
+  assert.equal(esCierreNocturno({ ayerHasta: 900, hoyDesde: 480 }), true);
+});
+
+test('noche: de 8 a 15 se ve en el acto', () => {
+  for (const h of ['08:00', '10:30', '14:59']) assert.equal(visibleDesde(dia(m27), cuba(m27, h), NOCHE), null, h);
+});
+
+test('noche: lo que entra a las 15:00 o de tarde-noche sale a las 8 del día siguiente', () => {
+  for (const h of ['15:00', '18:30', '23:59'])
+    assert.equal(iso(visibleDesde(dia(m27), cuba(m27, h), NOCHE)), cuba(m28, '08:00').toISOString(), h);
+});
+
+test('noche: lo que entra de madrugada sale a las 8 de ese mismo día', () => {
+  for (const h of ['00:00', '02:15', '07:59'])
+    assert.equal(iso(visibleDesde(dia(m27), cuba(m28, h), NOCHE)), cuba(m28, '08:00').toISOString(), h);
+});
+
+test('noche: la fecha del pedido no cuenta, manda la hora de entrada', () => {
+  assert.equal(iso(visibleDesde(dia('2026-10-20'), cuba(m27, '16:00'), NOCHE)), cuba(m28, '08:00').toISOString());
+});
+
+test('apagada o con las dos horas iguales no retiene nada', () => {
+  assert.equal(visibleDesde(dia(m27), cuba(m27, '20:00'), { ...NOCHE, activa: false }), null);
+  assert.equal(visibleDesde(dia(m27), cuba(m27, '20:00'), { activa: true, ayerHasta: 480, hoyDesde: 480 }), null);
 });
