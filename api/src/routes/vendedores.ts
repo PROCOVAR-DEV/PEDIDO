@@ -663,17 +663,6 @@ router.patch('/:id/nombre', async (req, res) => {
       return res.json({ ...vendedor, sinCambios: true });
     }
 
-    // Una ficha que creó un ARCHIVO ya lleva el nombre exacto de Parranda; editarlo a mano la
-    // desencaja del siguiente archivo y la ingesta lo rechaza. Solo la administración global
-    // puede corregirlo (`creadoPor` vacío = la creó la ingesta).
-    if (!vendedor.creadoPor && !requester.isGlobalAdmin) {
-      return res.status(403).json({
-        error:
-          'El nombre de este vendedor lo trae su archivo de Parranda y no se edita a mano: ' +
-          'si está mal, hay que corregirlo en Parranda o pedírselo a un administrador.',
-      });
-    }
-
     /**
      * Que el nombre nuevo no sea el de OTRO.
      *
