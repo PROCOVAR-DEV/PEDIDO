@@ -28,7 +28,16 @@ const sinTildes = (s: string): string =>
 export interface AlgoDelCatalogo {
   nombre?: string | null;
   categoria?: string | null;
+  /** El código de Ventra del producto (`sku`). */
+  codigo?: string | null;
 }
+
+/**
+ * Los códigos de Ventra de la línea de domicilio: 50 (PROCOVAR), 51 (CES) y 45, el VIEJO, anterior
+ * al 06/10/2026. Son los mismos que usa Reparto (`SkusDeDomicilio`). Por código y no solo por
+ * nombre: un nombre escrito distinto dejaba la factura «sin domicilio» y nadie se enteraba.
+ */
+const CODIGOS_DOMICILIO = new Set(['45', '50', '51']);
 
 /** ¿Es una línea de servicio y no algo que se transporta? */
 export function esServicio(x: AlgoDelCatalogo): boolean {
@@ -41,6 +50,8 @@ export function esServicio(x: AlgoDelCatalogo): boolean {
 
 /** ¿Es precisamente la línea del cobro del reparto? */
 export function esEntregaADomicilio(x: AlgoDelCatalogo): boolean {
+  if (CODIGOS_DOMICILIO.has((x.codigo ?? '').trim())) return true;
+
   const n = sinTildes(x.nombre ?? '');
 
   return n.includes('entrega a domicilio') || n.includes('servicio de entrega');

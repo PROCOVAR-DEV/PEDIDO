@@ -107,6 +107,23 @@ test('la línea de ENTREGA A DOMICILIO no cuenta como mercancía', () => {
   assert.equal(r.domicilioFacturado, 4.5)
 })
 
+test('el domicilio se reconoce por su código de Ventra (45, 50, 51) aunque el nombre sea otro', () => {
+  const pedido = [{ producto: 'PARRANDA 1.5L', packs: 20, unidades: 120 }]
+  const mercancia = { operNumber: '99', clienteNombre: 'LA CHIQUI', productoNombre: 'CERVEZA PARRANDA 1500 ML BLISTER 6U', cantidad: 20 }
+
+  for (const codigo of ['45', '50', '51']) {
+    const r = cotejar(pedido, [mercancia, { operNumber: '99', clienteNombre: 'LA CHIQUI', productoNombre: 'DOMICILIO', productoCodigo: codigo, cantidad: 1, precioUsd: 3 }])
+
+    assert.equal(r.domicilioFacturado, 3, `el código ${codigo} es el domicilio`)
+    assert.equal(r.lineas.length, 1, 'y no cuenta como mercancía')
+  }
+
+  // Un producto con otro código y otro nombre sigue siendo mercancía.
+  const otro = cotejar(pedido, [mercancia, { ...mercancia, productoNombre: 'AZUCAR MORENA 1 KG PACA 10U', productoCodigo: 'ALIM0021' }])
+
+  assert.equal(otro.domicilioFacturado, null)
+})
+
 test('sin línea de domicilio, no se inventa un cobro', () => {
   const r = cotejar(
     [{ producto: 'PARRANDA 1.5L', packs: 20, unidades: 120 }],

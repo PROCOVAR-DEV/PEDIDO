@@ -332,8 +332,8 @@ export function cotejar(lineasPedido: LineaPedido[], suyas: LineaFactura[]): Cot
    * Lo que sí se guarda es cuánto cobró: es lo que de verdad pagó el cliente por el
    * reparto, y es la señal de que ese pedido va a domicilio.
    */
-  const mercancia = suyas.filter((f) => !esServicio({ nombre: f.productoNombre }))
-  const domicilio = suyas.filter((f) => esEntregaADomicilio({ nombre: f.productoNombre }))
+  const mercancia = suyas.filter((f) => !esServicio({ nombre: f.productoNombre, codigo: f.productoCodigo }))
+  const domicilio = suyas.filter((f) => esEntregaADomicilio({ nombre: f.productoNombre, codigo: f.productoCodigo }))
   const domicilioFacturado = domicilio.length
     ? Number(domicilio.reduce((t, f) => t + (Number(f.precioUsd) || 0) * (Number(f.cantidad) || 1), 0).toFixed(2))
     : null

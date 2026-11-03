@@ -157,6 +157,23 @@ const yaCerroElDia = (fecha?: string | null): boolean => {
 };
 
 /**
+ * El pedido lleva domicilio —la APK lo cotizó— y la factura NO lo cobra.
+ *
+ * Es un error de quien factura (se olvida la línea «ENTREGA A DOMICILIO») y es dinero que no entra.
+ * El cotejo aparta esa línea para comparar la mercancía, así que sin esto el pedido salía «igual»
+ * y nadie lo veía. Se mira con lo que ya viene del servidor: lo cotizado y lo facturado. Solo si
+ * ya hay factura: sin ella el domicilio todavía no se puede haber cobrado.
+ */
+const domicilioSinFacturar = (order: {
+  facturaEstado?: string | null;
+  facturaDomicilio?: number | null;
+  costoDomicilio?: number | null;
+}): boolean =>
+  (order.costoDomicilio ?? 0) > 0 &&
+  (order.facturaEstado === "igual" || order.facturaEstado === "cambiado") &&
+  !((order.facturaDomicilio ?? 0) > 0);
+
+/**
  * Un pedido que CUADRA porque se corrigió no es lo mismo que uno que vino bien.
  *
  * Los dos quedan en `igual` —cuadran con la factura, y por eso se pueden repartir— pero
@@ -168,10 +185,17 @@ const chipDeFactura = (
   order: {
     facturaEstado?: string | null;
     facturaCorregidoAt?: string | null;
+    facturaDomicilio?: number | null;
+    costoDomicilio?: number | null;
     fecha?: string | null;
     estado?: string | null;
   },
 ): { color: "success" | "warning" | "default"; texto: string } | null => {
+  // Dinero que no se cobró: va por delante de cualquier otro estado de la factura.
+  if (domicilioSinFacturar(order)) {
+    return { color: "warning", texto: "Falta el domicilio" };
+  }
+
   if (order.facturaCorregidoAt) {
     return { color: "success", texto: "Facturado · corregido" };
   }
@@ -2778,6 +2802,19 @@ export const OrdersList = ({
                             {notaAbierta ? "Ocultar la factura" : "Ver la factura"}
                           </Button>
                         )}
+                    </div>
+                  )}
+                  {selectedOrder && domicilioSinFacturar(selectedOrder) && (
+                    <div className="rounded-large border border-warning-300 bg-warning-50 p-3">
+                      <p className="text-sm font-semibold text-warning-700">
+                        Falta el domicilio en la factura.
+                      </p>
+                      <p className="text-xs text-default-600">
+                        El pedido lleva un domicilio de {$$(selectedOrder.costoDomicilio ?? 0)} y la
+                        factura{" "}
+                        <span className="font-mono">{selectedOrder.facturaNumero ?? "—"}</span> no trae
+                        la línea ENTREGA A DOMICILIO: ese cobro no se hizo.
+                      </p>
                     </div>
                   )}
                   {/* Products */}
