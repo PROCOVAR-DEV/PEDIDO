@@ -119,3 +119,23 @@ export function normalizarCodigoManual(valor: unknown): { codigo: string; error?
 
   return { codigo };
 }
+
+/**
+ * ¿Uno de los dos nombres es el otro con más apellido o segundo nombre detrás?
+ *
+ * `INDIANA BARRIEL` e `INDIANA BARRIEL CHRISTIAN` dan el MISMO código (`indiana.barriel`): son la
+ * misma persona escrita corta y larga. Quien da de alta a mano a un vendedor suele teclear nombre
+ * y primer apellido; cuando llega su archivo con el nombre completo, la ingesta lo rechazaba como
+ * «colisión» y había que corregir la ficha a mano y volver a subir.
+ *
+ * Solo cuenta si las palabras del corto son las PRIMERAS del largo, completas: `ANA PEREZ` no es
+ * prefijo de `ANA PEREZA GOMEZ`. Con menos de dos palabras no se compara: un nombre suelto
+ * («ANDY») casaría con cualquiera.
+ */
+export function esElMismoNombreMasLargo(a: string, b: string): boolean {
+  const A = nombreComparable(a).split(' ');
+  const B = nombreComparable(b).split(' ');
+  const [corto, largo] = A.length <= B.length ? [A, B] : [B, A];
+
+  return corto.length >= 2 && corto.every((palabra, i) => palabra === largo[i]);
+}
