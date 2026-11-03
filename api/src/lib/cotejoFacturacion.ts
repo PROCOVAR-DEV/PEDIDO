@@ -56,6 +56,7 @@ import { facturaCompletaQueue, facturaRapidoQueue } from './queues';
 import { anotarHistorial } from './historialPedido';
 import { cajeroDeLasFacturas } from './cajeroVentra';
 import prisma from '../prismaClient';
+import type { Prisma } from '@prisma/client';
 import { avisarAlReparto, avisarQueYaNoVa, queLeCambia } from './avisoAlReparto';
 import { databases, ventasDeSucursal, ventasPorPrefijoDeFolio, type LineaVentaVentra } from './ventra';
 import { baseDeSucursal } from './baseDeVentra';
@@ -157,9 +158,22 @@ export interface ResultadoCotejo {
  *                pantalla salen con guiones para siempre porque la ventana normal ya no
  *                los alcanza.
  */
+/**
+ * Los pedidos que llevan domicilio cotizado y cuya factura NO lo cobra. Son los únicos que el
+ * modo `soloDomicilioFaltante` vuelve a mirar: sirve para enterarse de que la factura ya se
+ * arregló sin recorrer todos los demás.
+ */
+const FALTA_DOMICILIO: Prisma.PedidoWhereInput = {
+  costoDomicilio: { gt: 0 },
+  facturaDomicilio: null,
+  facturaEstado: { in: ['igual', 'cambiado'] },
+};
+
 export async function cotejarUnaVez(
-  { rapido = false, desde: desdeFijo, hasta: hastaFijo, facturasHasta }: {
+  { rapido = false, soloDomicilioFaltante = false, desde: desdeFijo, hasta: hastaFijo, facturasHasta }: {
     rapido?: boolean;
+    /** Solo los pedidos con domicilio cotizado y sin cobro de domicilio en la factura. */
+    soloDomicilioFaltante?: boolean;
     desde?: Date;
     hasta?: Date;
     /**
@@ -216,6 +230,15 @@ export async function cotejarUnaVez(
        * completa —la de cada diez minutos— se ocupa de lo demás.
        */
       let ventas: LineaVentaVentra[];
+
+      if (soloDomicilioFaltante) {
+        const hay = await prisma.pedido.count({ where: { sucursalId: suc.id, fecha: { gte: desdePedidos }, ...FALTA_DOMICILIO } });
+
+        if (hay === 0) {
+          salida.push(r);
+          continue;
+        }
+      }
 
       if (rapido) {
         const esperando = await prisma.pedido.findMany({
@@ -295,6 +318,7 @@ export async function cotejarUnaVez(
            * pedidos completados y diciendo «no apareció» a la vez (21-23/09/2026).
            */
           ...(rapido ? { OR: [{ facturaEstado: null }, { facturaEstado: 'sin_factura' }] } : {}),
+          ...(soloDomicilioFaltante ? FALTA_DOMICILIO : {}),
         },
         include: { items: true, cliente: true },
       });
@@ -533,6 +557,13 @@ async function cotejarUnPedido(
   if (r.domicilioFacturado != null && r.domicilioFacturado !== p.facturaDomicilio) {
     datos.facturaDomicilio = r.domicilioFacturado;
   }
+  // Solo el pedido al que le FALTABA el domicilio en la factura y ya lo trae: se apunta cuándo se
+  // arregló (Ventra no dice cuándo se editó, pero esta pasada es la primera que ve lo nuevo).
+  const cambioDomicilio =
+    'facturaDomicilio' in datos &&
+    (p.facturaEstado === 'igual' || p.facturaEstado === 'cambiado') &&
+    ((p as { costoDomicilio?: number | null }).costoDomicilio ?? 0) > 0 &&
+    !((p.facturaDomicilio ?? 0) > 0);
 
   /**
    * Y AQUÍ SE CORRIGE EL PEDIDO CON LO QUE DICE LA FACTURA.
@@ -700,6 +731,16 @@ async function cotejarUnPedido(
     await anotarHistorial({ origen: 'sistema', por: String(completar?.completadoPor ?? POR_LA_FACTURA) }, [
       ...(completar ? [{ pedidoId: p.id, tipo: 'completado' as const, nota: r.numero ? `Factura ${r.numero}` : 'Con factura' }] : []),
       ...(corregido ? [{ pedidoId: p.id, tipo: 'editado' as const, campo: 'Líneas del pedido', nota: `Reescritas con la factura ${r.numero}` }] : []),
+      ...(cambioDomicilio
+        ? [{
+            pedidoId: p.id,
+            tipo: 'editado' as const,
+            campo: 'Domicilio facturado',
+            antes: p.facturaDomicilio == null ? null : String(p.facturaDomicilio),
+            despues: String(r.domicilioFacturado),
+            nota: r.numero ? `Factura ${r.numero}` : null,
+          }]
+        : []),
     ]);
     // Que se vea sin que nadie recargue.
     emitEvent('pedido', { id: p.id, sucursalId: p.sucursalId, accion: 'update' });
