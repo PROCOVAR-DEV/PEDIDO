@@ -6,7 +6,6 @@ import {
   codigoComparable,
   codigoDesdeNombre,
   normalizarCodigoManual,
-  esElMismoNombreMasLargo,
 } from '../src/lib/nombreVendedor.ts';
 
 /**
@@ -174,18 +173,4 @@ test('un salto de línea o un tabulador dentro del nombre separa palabras, no la
   assert.equal(nombreComparable('CAFE\tCENTRAL'), 'CAFE CENTRAL');
   // y lo invisible sigue tirándose sin dejar hueco
   assert.equal(nombreComparable('ANDY\u200b ALMANZA'), 'ANDY ALMANZA');
-});
-
-describe('el mismo vendedor con el nombre corto o largo', () => {
-  test('INDIANA BARRIEL e INDIANA BARRIEL CHRISTIAN dan el mismo código y son la misma persona', () => {
-    assert.equal(codigoDesdeNombre('INDIANA BARRIEL'), codigoDesdeNombre('INDIANA BARRIEL CHRISTIAN'));
-    assert.equal(esElMismoNombreMasLargo('INDIANA BARRIEL', 'INDIANA BARRIEL CHRISTIAN'), true);
-    assert.equal(esElMismoNombreMasLargo('Indiana Barriel Christian', 'INDIANA BARRIEL'), true);
-  });
-
-  test('palabras distintas, o una palabra suelta, no cuentan', () => {
-    assert.equal(esElMismoNombreMasLargo('ANA PEREZ', 'ANA PEREZA GOMEZ'), false);
-    assert.equal(esElMismoNombreMasLargo('ANDY', 'ANDY ALMANZA'), false);
-    assert.equal(esElMismoNombreMasLargo('JOSE LUIS', 'JOSE PEREZ'), false);
-  });
 });

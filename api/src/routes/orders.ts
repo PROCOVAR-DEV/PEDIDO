@@ -20,7 +20,7 @@ import {
   getRequesterContext,
   soloLoSuyo,
 } from '../lib/sucursalContext';
-import { nombreComparable, codigoComparable, esElMismoNombreMasLargo } from '../lib/nombreVendedor';
+import { nombreComparable, codigoComparable } from '../lib/nombreVendedor';
 import { parsearFechaConsulta } from '../lib/fechaConsulta';
 import { emitEvent } from '../lib/events';
 import { claveDePedido, clavesDeBorrados, folioBaseDe, reservarFoliosBorrados } from '../lib/pedidoBorrado';
@@ -1265,19 +1265,7 @@ async function resolveSeller(name: string, code: string, sucursalDeLaCarpeta: st
     // diferencia invisible entre ambos se leia como "son personas distintas" y
     // el archivo entero se rechazaba.
     if (nombreComparable(existing.nombre) !== nombre) {
-      // La misma persona con el nombre más corto o más largo (misma regla de código) no es una
-      // colisión. El archivo trae el nombre completo, así que la ficha corta se completa; si la
-      // ficha ya es la larga, se deja como está.
-      if (!esElMismoNombreMasLargo(existing.nombre, nombre)) {
-        throw new VendedorColisionError(code, existing.nombre, name);
-      }
-      if (nombre.length > nombreComparable(existing.nombre).length) {
-        existing = await prisma.vendedor.update({
-          where: { id: existing.id },
-          data: { nombre },
-          include: { gestor: true },
-        });
-      }
+      throw new VendedorColisionError(code, existing.nombre, name);
     }
     // Vendedor dado de baja: su CSV ya no debería llegar; si llega, se rechaza.
     if (!existing.activo) {
