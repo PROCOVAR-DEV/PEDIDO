@@ -8,6 +8,8 @@ import { decidirActivos, esMejorFicha, type FilaDeParranda } from './clientesAct
 import { filasGanadoras } from './parrandaFilas';
 import { nombreComparable } from './nombreVendedor';
 import { esConsumoPropio } from './consumoPropio';
+import { ubicacionEsNuestra } from './ubicacionNuestra';
+import { evaluarGeoClientes } from './geoClientes';
 import { esElMismoCliente } from './nombreParecido';
 
 const PARRANDA_URL = process.env.PARRANDA_API_URL || 'https://ccsa.retool.com/url/procovar';
@@ -116,6 +118,8 @@ export interface ParrandaSyncResult {
   codigosMovidos: number;
   /** Códigos con el prefijo de otra sucursal. */
   prefijosAjenos: number;
+  /** Clientes cuyo punto es NUESTRO (lo corrigió la APK o un supervisor): Parranda no lo pisó. */
+  ubicacionesNuestras: number;
   /**
    * Lo que hay que enseñarle a Parranda, en cristiano y con nombres.
    *
@@ -167,6 +171,7 @@ export async function processParrandaSync(
       id: true, nombre: true, sucursalId: true, activo: true, bajaManual: true,
       codigo: true, direccion: true, municipio: true,
       latitud: true, longitud: true, geolocalizacion: true,
+      geoFuente: true, geoEstado: true,
     },
   });
   type Actual = (typeof existentes)[number];
@@ -225,7 +230,7 @@ export async function processParrandaSync(
 
   const r: ParrandaSyncResult = {
     paginas: 0, total: 0, creados: 0, actualizados: 0, sinCambios: 0, repetidas: 0, conGeo: 0, sinGeo: 0, sinSucursal: 0, errores: 0,
-    erroresDetalle: [], cambios: [], choquesDeCodigo: 0, prefijosAjenos: 0, avisos: [],
+    erroresDetalle: [], cambios: [], choquesDeCodigo: 0, prefijosAjenos: 0, ubicacionesNuestras: 0, avisos: [],
     desactivados: 0, reactivados: 0, codigosMovidos: 0,
   };
   // Lo que Parranda mandó en esta pasada, para decidir al final quién ya no está.
@@ -323,6 +328,15 @@ export async function processParrandaSync(
         !porClave.has(key) &&
         !porClave.has(`${sucursalId}|${norm(nuevoNombre)}`);
 
+      // Lo NUESTRO manda más que lo de Parranda: si la ubicación la corrigió la APK o un supervisor (o la
+      // dio por buena), se deja como está. Parranda sigue mandando su punto viejo en cada pasada.
+      if (actual && ubicacionEsNuestra(actual)) {
+        geoData.latitud = actual.latitud;
+        geoData.longitud = actual.longitud;
+        geoData.geolocalizacion = actual.geolocalizacion;
+        r.ubicacionesNuestras++;
+      }
+
       if (actual) {
         // Solo se escribe si algo CAMBIO de verdad. Las coordenadas se comparan
         // con margen: son decimales y una diferencia en el ultimo digito no es
@@ -393,7 +407,12 @@ export async function processParrandaSync(
           if (r.cambios.length < 200) {
             r.cambios.push({ cliente: nombre, sucursal: code ?? null, campos });
           }
-          const datos = renombrar ? { ...geoData, nombre: nuevoNombre } : geoData;
+          const cambiaElPunto = campos.some((f) => f.campo === 'latitud' || f.campo === 'longitud');
+          const datos = {
+            ...(renombrar ? { ...geoData, nombre: nuevoNombre } : geoData),
+            // Cuando el punto lo cambia Parranda se anota: de quién es y desde cuándo.
+            ...(cambiaElPunto ? { geoFuente: 'parranda', geoAt: new Date() } : {}),
+          };
           await prisma.cliente.update({ where: { id: actual.id }, data: datos });
           r.actualizados++;
 
@@ -522,6 +541,13 @@ export async function processParrandaSync(
     // Y avisar al front por SSE: el sync corre en el worker, así que sin este evento la
     // lista de clientes se queda con los datos viejos hasta que alguien recargue.
     emitEvent('cliente', { accion: 'sync-parranda' });
+  }
+  // Con los puntos nuevos de Parranda, se vuelve a comparar cada cliente con su calle (menos de 2 s).
+  try {
+    await evaluarGeoClientes();
+  } catch (e) {
+    r.errores++;
+    if (r.erroresDetalle.length < 5) r.erroresDetalle.push(`ubicaciones por revisar: ${(e as Error)?.message}`);
   }
   return r;
 }
