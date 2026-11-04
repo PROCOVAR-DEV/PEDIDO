@@ -24,6 +24,10 @@ export const MIN_CLIENTES_EN_LA_CALLE = 3;
 /** Un punto más lejos que esto del centro de su municipio se marca aunque la calle no tenga referencia. */
 export const LEJOS_DEL_MUNICIPIO_KM = 25;
 const MIN_PARA_CENTRO_DEL_MUNICIPIO = 10;
+/** Si hay otro cliente que nombra la MISMA localidad a menos de esto, el punto se da por bueno. */
+export const UMBRAL_LOCALIDAD_KM = 1;
+/** Una palabra del resto de la dirección sirve de «localidad» si la llevan entre 2 y esto clientes del municipio. */
+const MAX_CLIENTES_POR_PALABRA = 80;
 
 export interface ClienteGeo {
   id: string;
@@ -40,7 +44,7 @@ export interface ResultadoGeo {
   distanciaKm: number | null;
   /** Ese cliente más cercano: para que el supervisor vea con quién se comparó. */
   vecinoId: string | null;
-  motivo: 'calle' | 'sin_calle' | 'sin_referencia' | 'lejos_del_municipio';
+  motivo: 'calle' | 'localidad' | 'sin_calle' | 'sin_referencia' | 'lejos_del_municipio';
 }
 
 const PALABRAS_QUE_NO_SON_LA_CALLE = new Set([
@@ -79,6 +83,26 @@ export function palabrasDeCalle(direccion: string | null | undefined): string[] 
 }
 
 /**
+ * Las palabras de la dirección que NO son la calle: la localidad o el barrio («Las Minas», «Pueblo Nuevo»), las
+ * calles entre las que está… Sirven de segunda referencia: «Martí» se repite en cada barrio, pero «Las Minas» no.
+ */
+export function palabrasDelResto(direccion: string | null | undefined, calle: string[] | null): string[] {
+  const t = normalizarTexto(direccion);
+
+  if (!t) return [];
+
+  const propias = new Set(calle ?? []);
+
+  return [
+    ...new Set(
+      t
+        .split(/[^a-z0-9]+/)
+        .filter((p) => p.length >= 4 && !/\d/.test(p) && !PALABRAS_QUE_NO_SON_LA_CALLE.has(p) && !propias.has(p)),
+    ),
+  ];
+}
+
+/**
  * ¿Son la misma calle? «Maceo», «Calle Maceo» y «Antonio Maceo» sí: las palabras de la más corta
  * están todas en la más larga. Con una sola palabra de menos de 4 letras no se compara: «sol» o
  * «paz» casarían con cualquier cosa.
@@ -107,6 +131,27 @@ function mediana(xs: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/** El cliente más cercano (a menos de `UMBRAL_LOCALIDAD_KM`) que nombra alguna de las mismas localidades, o null. */
+function vecinoDeLaLocalidad<T extends ClienteGeo & { resto: string[] }>(c: T, porLocalidad: Map<string, T[]>): { id: string; d: number } | null {
+  let mejor: { id: string; d: number } | null = null;
+
+  for (const p of c.resto) {
+    const l = porLocalidad.get(p);
+
+    if (!l || l.length < 2 || l.length > MAX_CLIENTES_POR_PALABRA) continue;
+
+    for (const o of l) {
+      if (o.id === c.id) continue;
+
+      const d = distanciaKm(c, o);
+
+      if (d < UMBRAL_LOCALIDAD_KM && (!mejor || d < mejor.d)) mejor = { id: o.id, d };
+    }
+  }
+
+  return mejor;
+}
+
 /**
  * Evalúa a todos los clientes que se le pasan, cada uno contra los demás de SU sucursal y SU municipio.
  * Pásale solo clientes activos con punto: son las dos cosas que hacen falta para servir de referencia.
@@ -115,13 +160,15 @@ export function evaluarClientes(clientes: ClienteGeo[]): Map<string, ResultadoGe
   const salida = new Map<string, ResultadoGeo>();
 
   // Por sucursal y municipio: es dentro de cada uno donde se compara.
-  const grupos = new Map<string, Array<ClienteGeo & { calle: string[] | null }>>();
+  const grupos = new Map<string, Array<ClienteGeo & { calle: string[] | null; resto: string[] }>>();
 
   for (const c of clientes) {
     const clave = `${c.sucursalId ?? ''}|${normalizarTexto(c.municipio)}`;
     const g = grupos.get(clave) ?? [];
 
-    g.push({ ...c, calle: palabrasDeCalle(c.direccion) });
+    const calle = palabrasDeCalle(c.direccion);
+
+    g.push({ ...c, calle, resto: palabrasDelResto(c.direccion, calle) });
     grupos.set(clave, g);
   }
 
@@ -132,9 +179,16 @@ export function evaluarClientes(clientes: ClienteGeo[]): Map<string, ResultadoGe
         : null;
 
     // Para no comparar a todos con todos: cada palabra de calle apunta a los clientes que la llevan.
-    const porPalabra = new Map<string, Array<ClienteGeo & { calle: string[] | null }>>();
+    const porPalabra = new Map<string, Array<ClienteGeo & { calle: string[] | null; resto: string[] }>>();
+    const porLocalidad = new Map<string, Array<ClienteGeo & { calle: string[] | null; resto: string[] }>>();
 
     for (const c of g) {
+      for (const p of c.resto) {
+        const l = porLocalidad.get(p) ?? [];
+
+        l.push(c);
+        porLocalidad.set(p, l);
+      }
       for (const p of c.calle ?? []) {
         const l = porPalabra.get(p) ?? [];
 
@@ -184,7 +238,15 @@ export function evaluarClientes(clientes: ClienteGeo[]): Map<string, ResultadoGe
 
       const estado: GeoEstado = d < UMBRAL_COINCIDE_KM ? 'coincide' : d < UMBRAL_REVISAR_KM ? 'revisar' : 'no_coincide';
 
-      salida.set(c.id, { estado, distanciaKm: Math.round(d * 1000) / 1000, vecinoId: mejor.id, motivo: 'calle' });
+      // La calle puede repetirse en otro barrio («Martí»): si la localidad que dice la dirección tiene a otro
+      // cliente muy cerca, el punto está donde dice.
+      const loc = estado === 'coincide' ? null : vecinoDeLaLocalidad(c, porLocalidad);
+
+      if (loc) {
+        salida.set(c.id, { estado: 'coincide', distanciaKm: Math.round(loc.d * 1000) / 1000, vecinoId: loc.id, motivo: 'localidad' });
+      } else {
+        salida.set(c.id, { estado, distanciaKm: Math.round(d * 1000) / 1000, vecinoId: mejor.id, motivo: 'calle' });
+      }
     }
   }
 

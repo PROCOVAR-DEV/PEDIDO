@@ -112,3 +112,30 @@ describe('un vecino que está lejísimos del municipio no hace dudoso a quien s�
     assert.equal(rs.get('ss1')!.estado === 'no_coincide' || rs.get('ss1')!.estado === 'revisar', true);
   });
 });
+
+describe('una calle que se repite en otro barrio no marca a quien tiene su localidad cerca', () => {
+  // «Martí» en el centro de Guanabacoa (tres clientes juntos) y, a 11 km, un cliente de «Las Minas»
+  // con otros dos clientes que nombran «Las Minas» a su lado.
+  const centro = [0, 1, 2].map((i) => c(`m${i}`, `Martí e/ División y Versalles ${i}`, 23.1 + i * 0.0004, -82.30, 'Guanabacoa', 'HAB'));
+  const minas = (id: string, lat: number) => c(id, 'Calle Real, Las Minas', lat, -82.20, 'Guanabacoa', 'HAB');
+
+  test('«Martí» en Las Minas, con clientes de Las Minas cerca: coincide por la localidad', () => {
+    const r = evaluarClientes([
+      ...centro,
+      c('ana', 'Calle Martí No.201 e/ Maceo y Máximo Gómez. Las Minas.', 23.1, -82.20, 'Guanabacoa', 'HAB'),
+      minas('v1', 23.1005), minas('v2', 23.1010),
+    ]).get('ana')!;
+
+    assert.equal(r.estado, 'coincide');
+    assert.equal(r.motivo, 'localidad');
+  });
+
+  test('sin clientes de su localidad cerca, sigue marcándose', () => {
+    const r = evaluarClientes([
+      ...centro,
+      c('ana', 'Calle Martí No.201 e/ Maceo y Máximo Gómez. Las Minas.', 23.1, -82.20, 'Guanabacoa', 'HAB'),
+    ]).get('ana')!;
+
+    assert.notEqual(r.estado, 'coincide');
+  });
+});
