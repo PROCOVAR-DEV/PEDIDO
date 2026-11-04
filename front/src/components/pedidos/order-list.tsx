@@ -67,6 +67,7 @@ import {
 } from "@/stores/datos/pedidos";
 import { useCerrarAlPulsarFuera } from "@/hooks/cerrar-al-pulsar-fuera";
 import { mensajeDeError } from "@/lib/error-del-servidor";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 // Los tipos del listado viven en el store: los comparten quien los pinta y quien
 // los trae, y asi no se separan cuando cambie el api.
@@ -118,7 +119,7 @@ const HORA_CORTE = 18.5;
 /** El día y la hora en Cuba, que es donde están las sucursales — no donde esté el servidor. */
 const enCuba = (d: Date) => {
   const partes = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(d),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -243,7 +244,7 @@ const estaRetenido = (o: { visibleDesde?: string | null }) =>
 /** "15:00" en la hora de Cuba, que es donde están las sucursales y la regla. */
 const horaEnCuba = (iso: string) =>
   new Intl.DateTimeFormat("es-ES", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(iso),
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
@@ -256,7 +257,7 @@ const horaEnCuba = (iso: string) =>
 const cuandoSale = (iso: string) => {
   const dia = (d: Date) =>
     new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Havana",
+      timeZone: zonaCuba(d),
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -273,7 +274,7 @@ const cuandoSale = (iso: string) => {
   if (dias === 1) return `mañana ${hora}`;
 
   const semana = new Intl.DateTimeFormat("es-ES", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(sale),
     weekday: "long",
   }).format(sale);
 

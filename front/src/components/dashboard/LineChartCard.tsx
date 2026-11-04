@@ -15,6 +15,7 @@ import {
 
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
 import { useDashboard } from "@/providers/DashboardProvider";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 const MESES = [
   "Enero",
@@ -45,7 +46,7 @@ const pct = (parte: number, todo: number) =>
 /** Mes y año de hoy en Cuba: el mes en curso es el que se resalta. */
 const hoyEnCuba = () => {
   const [y, m] = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(),
     year: "numeric",
     month: "2-digit",
   })

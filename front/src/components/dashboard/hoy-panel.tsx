@@ -8,6 +8,7 @@ import { diaAnterior } from "./use-hoy";
 import Icons from "@/components/icons/iconify";
 import { cuandoEnCuba, hora12 } from "@/lib/hora12";
 import { cn } from "@/lib/utils";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 /**
  * Franja fina de aviso para TODOS los roles de una sucursal con la regla de liberación
@@ -78,7 +79,7 @@ export const haceCuanto = (iso: string) => {
 /** Fecha de hoy en Cuba, que es donde están las sucursales y donde cambia el día. */
 export const fechaDeHoy = () => {
   const t = new Intl.DateTimeFormat("es-ES", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(),
     weekday: "long",
     day: "numeric",
     month: "long",

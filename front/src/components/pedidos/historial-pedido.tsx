@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { getApiBaseUrl } from "@/config";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 /**
  * QUÉ LE PASÓ AL PEDIDO: cuándo, quién y por dónde.
@@ -54,7 +55,7 @@ const TITULO: Record<
 /** La hora en Cuba, que es donde están las sucursales — no donde esté quien mira. */
 export const cuando = (iso: string) =>
   new Date(iso).toLocaleString("es-ES", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(iso),
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -168,7 +169,7 @@ export function ultimoCambio(filas: Fila[], concepto: Concepto): Fila | null {
 
 const corto = (iso: string) =>
   new Date(iso).toLocaleString("es-ES", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(iso),
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",

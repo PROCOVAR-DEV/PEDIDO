@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getApiBaseUrl } from "@/config";
 import { mensajeDeError } from "@/lib/error-del-servidor";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 /** Lo que ya da `GET /facturacion/resumen` (sin el desglose por sucursal, que aquí no se usa). */
 export interface ResumenHoy {
@@ -60,7 +61,7 @@ export interface AvisoLiberacion {
 /** El día `AAAA-MM-DD` que es ahora en Cuba, que es donde están las sucursales y donde cambia el día. */
 const hoyEnCuba = () =>
   new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

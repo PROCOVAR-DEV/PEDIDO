@@ -1,3 +1,4 @@
+import { zonaCuba } from "@/lib/zona-cuba";
 /**
  * El estado de entrega de CADA factura de un pedido, para el tooltip del chip de reparto.
  *
@@ -26,7 +27,7 @@ const ETIQUETA: Record<string, string> = {
 /** "23/10 14:12", en la hora de Cuba (donde están las sucursales), no la de quien mira. */
 export function cuandoEnCuba(iso: string): string {
   const f = new Intl.DateTimeFormat("es-ES", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(iso),
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",

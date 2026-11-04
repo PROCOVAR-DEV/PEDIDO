@@ -2,6 +2,7 @@ import { Chip, Spinner } from "@heroui/react";
 import { useEffect, useState } from "react";
 
 import { getApiBaseUrl } from "@/config";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 type Fila = {
   id: string;
@@ -24,7 +25,7 @@ const MOTIVO: Record<Fila["motivo"], string> = {
 /** La hora en Cuba, que es donde están las sucursales — no donde esté quien mira. */
 const cuando = (iso: string) =>
   new Date(iso).toLocaleString("es-CU", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(iso),
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -49,7 +50,9 @@ export const HistorialEnlace = ({ vendedorId }: { vendedorId: string }) => {
 
     setFilas(null);
     setError(false);
-    fetch(`${getApiBaseUrl()}/vendedores/${vendedorId}/enlaces`, { signal: ac.signal })
+    fetch(`${getApiBaseUrl()}/vendedores/${vendedorId}/enlaces`, {
+      signal: ac.signal,
+    })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("no se pudo"))))
       .then((j) => setFilas(Array.isArray(j.enlaces) ? j.enlaces : []))
       .catch((e) => {
@@ -68,7 +71,8 @@ export const HistorialEnlace = ({ vendedorId }: { vendedorId: string }) => {
         <Spinner size="sm" />
       ) : filas.length === 0 ? (
         <p className="text-sm text-default-500">
-          Todavía no hay cambios guardados. Desde ahora cada cambio de usuario queda aquí.
+          Todavía no hay cambios guardados. Desde ahora cada cambio de usuario
+          queda aquí.
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-default-100">
@@ -84,7 +88,8 @@ export const HistorialEnlace = ({ vendedorId }: { vendedorId: string }) => {
                 </Chip>
               </span>
               <span className="text-xs text-default-500">
-                {cuando(f.createdAt)} · {f.por ?? "sistema"} · {MOTIVO[f.motivo]}
+                {cuando(f.createdAt)} · {f.por ?? "sistema"} ·{" "}
+                {MOTIVO[f.motivo]}
               </span>
             </li>
           ))}

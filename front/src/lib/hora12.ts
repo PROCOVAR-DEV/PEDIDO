@@ -1,3 +1,4 @@
+import { zonaCuba } from "./zona-cuba";
 /** Minutos desde medianoche de una hora «HH:MM». */
 export const aMinutos = (hhmm: string) => {
   const [h, m] = hhmm.split(":").map(Number);
@@ -19,7 +20,7 @@ export const deMinutos = (min: number) => {
 export const cuandoEnCuba = (iso: string) => {
   const dia = (d: Date) =>
     new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/Havana",
+      timeZone: zonaCuba(d),
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -31,7 +32,7 @@ export const cuandoEnCuba = (iso: string) => {
       86_400_000,
   );
   const hhmm = new Intl.DateTimeFormat("es-ES", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(t),
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
@@ -42,7 +43,7 @@ export const cuandoEnCuba = (iso: string) => {
   if (dias === 1) return `mañana ${hora}`;
 
   const semana = new Intl.DateTimeFormat("es-ES", {
-    timeZone: "America/Havana",
+    timeZone: zonaCuba(t),
     weekday: "long",
   }).format(t);
 
