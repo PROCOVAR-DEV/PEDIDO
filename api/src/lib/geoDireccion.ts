@@ -155,7 +155,13 @@ export function evaluarClientes(clientes: ClienteGeo[]): Map<string, ResultadoGe
 
       // Se parte de la palabra más larga de la calle (la más específica) y se filtra por calle entera.
       const clave = [...c.calle].sort((x, y) => y.length - x.length)[0];
-      const vecinos = (porPalabra.get(clave) ?? []).filter((o) => o.id !== c.id && o.calle && mismaCalle(c.calle!, o.calle));
+      let vecinos = (porPalabra.get(clave) ?? []).filter((o) => o.id !== c.id && o.calle && mismaCalle(c.calle!, o.calle));
+
+      // Un cliente que cae DENTRO de su municipio no se compara con los que están lejísimos de él: ese «vecino»
+      // es el dudoso (otra calle del mismo nombre, o un municipio mal puesto), no este cliente. Pasó con
+      // «Desengaño», en Trinidad, comparada con una de Sancti Spíritus ciudad (58 km): el punto era el correcto.
+      // Quien está lejos del centro conserva a todos los vecinos: puede ser una zona rural con sus propios clientes.
+      if (centro !== null && !lejos) vecinos = vecinos.filter((o) => distanciaKm(o, centro) <= LEJOS_DEL_MUNICIPIO_KM);
 
       if (vecinos.length + 1 < MIN_CLIENTES_EN_LA_CALLE) {
         salida.set(c.id, lejos

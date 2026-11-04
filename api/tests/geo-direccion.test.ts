@@ -92,3 +92,23 @@ test('distancia: 1 km de latitud son ~1 km', () => {
 
   assert.ok(d > 0.99 && d < 1.01);
 });
+
+describe('un vecino que está lejísimos del municipio no hace dudoso a quien sí está dentro', () => {
+  // Doce clientes de Trinidad, juntos, para que el municipio tenga centro.
+  const trinidad = Array.from({ length: 12 }, (_, i) => c(`t${i}`, `Calle Otra${i} 1`, 21.8088 + i * 0.0005, -79.9908, 'Trinidad', 'SS'));
+  // «Desengaño»: una en Trinidad (la que tiene el punto bueno) y dos más con ese nombre en Sancti Spíritus ciudad.
+  const desengano = (id: string, lat: number, lon: number) => c(id, 'Desengaño 5', lat, lon, 'Trinidad', 'SS');
+
+  test('el cliente de Trinidad no se marca por culpa de dos «Desengaño» puestos en otra ciudad', () => {
+    const r = evaluarClientes([...trinidad, desengano('buena', 21.8019, -79.9883), desengano('ss1', 21.9289, -79.4456), desengano('ss2', 21.9294, -79.4434)]).get('buena')!;
+
+    assert.notEqual(r.estado, 'no_coincide');
+    assert.notEqual(r.estado, 'revisar');
+  });
+
+  test('y los que sí están fuera de su municipio siguen marcándose', () => {
+    const rs = evaluarClientes([...trinidad, desengano('buena', 21.8019, -79.9883), desengano('buena2', 21.8030, -79.9890), desengano('ss1', 21.9289, -79.4456)]);
+
+    assert.equal(rs.get('ss1')!.estado === 'no_coincide' || rs.get('ss1')!.estado === 'revisar', true);
+  });
+});
