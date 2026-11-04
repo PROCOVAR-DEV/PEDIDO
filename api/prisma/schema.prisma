@@ -490,6 +490,19 @@ model Cliente {
   geoFuente String?
   geoAt     DateTime?
 
+  /// ¿El punto cae donde dice la dirección? Issue #13 (04/11/2026). Ver `lib/geoDireccion.ts`.
+  /// «coincide» | «revisar» | «no_coincide» | «sin_referencia», o «confirmado» cuando un supervisor
+  /// lo dio por bueno. Es un AVISO para el supervisor: nunca bloquea guardar nada.
+  geoEstado      String?
+  /// Distancia al cliente más cercano de su misma calle, y quién es.
+  geoDistanciaKm Float?
+  geoVecinoId    String?
+  geoEvaluadoAt  DateTime?
+  /// Quién lo dio por bueno y cuándo, y por qué.
+  geoRevisadoPor String?
+  geoRevisadoAt  DateTime?
+  geoMotivo      String?
+
   /// Activo o inactivo. Parranda desactiva clientes sin avisar: simplemente DEJA DE MANDARLOS. La
   /// sincronización los marca inactivos cuando una pasada completa ya no los ve, y vuelven a
   /// activos si reaparecen. Un inactivo no sale por defecto en la lista de clientes ni en lo que
@@ -531,6 +544,7 @@ model Cliente {
   @@unique([sucursalId, codigo])
   @@index([activo])
   @@index([vendedorAsignadoId])
+  @@index([sucursalId, geoEstado])
   // El nombre identifica al cliente dentro de su sucursal (asi lo busca la importacion).
   // Sin este unico, dos pedidos del mismo cliente importados a la vez creaban el cliente
   // dos veces, y el pedido salia con folio -1, -2... en vez de actualizarse.

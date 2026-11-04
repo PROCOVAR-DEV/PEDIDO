@@ -11,6 +11,8 @@ import { parrandaQueue } from '../lib/queues';
 import { anotarHistorial } from '../lib/historialPedido';
 import { ESTADO_ABIERTO, planReasignacion, puedeReasignar } from '../lib/reasignarCliente';
 import { avisarReasignacion } from '../lib/avisoReasignacion';
+import { avisarAlReparto } from '../lib/avisoAlReparto';
+import { evaluarGeoClientes, puntoEnCuba } from '../lib/geoClientes';
 
 const router = express.Router();
 
@@ -686,6 +688,201 @@ router.post('/baja', (req, res) => cambiarBaja(req, res, true));
 router.post('/reactivar', (req, res) => cambiarBaja(req, res, false));
 
 // GET /clientes/:id - Get cliente details
+// ---------------------------------------------------------------------------------------------
+// ¿El punto del cliente cae donde dice su dirección? (issue #13, 04/11/2026). La comparación y
+// por qué es un AVISO y no un bloqueo están en `lib/geoDireccion.ts`. Solo Supervisor para arriba
+// (de SU sucursal; el Super Admin, de cualquiera).
+// ---------------------------------------------------------------------------------------------
+
+/** La sucursal a la que se acota quien pide: la suya, o la que tenga elegida si es global (sin elegir, todas). */
+function sucursalDeGeo(req: express.Request): { ok: boolean; sucursalId?: string; status?: number; error?: string } {
+  const ctx = getRequesterContext(req);
+
+  if (!puedeReasignar(ctx.role, ctx.isGlobalAdmin)) {
+    return { ok: false, status: 403, error: 'Solo un Supervisor o un rol superior puede revisar las ubicaciones.' };
+  }
+
+  const f = resolveSucursalFilter(req);
+
+  if (f.error) return { ok: false, status: f.status ?? 400, error: f.error };
+
+  return { ok: true, sucursalId: f.sucursalId };
+}
+
+// POST /clientes/geo-evaluar — vuelve a comparar el punto de cada cliente con su calle y guarda el resultado.
+router.post('/geo-evaluar', async (req, res) => {
+  const alcance = sucursalDeGeo(req);
+
+  if (!alcance.ok) return res.status(alcance.status ?? 400).json({ error: alcance.error });
+
+  try {
+    res.json({ sucursalId: alcance.sucursalId ?? null, resumen: await evaluarGeoClientes(alcance.sucursalId) });
+  } catch (err) {
+    console.error('geo-evaluar error:', err);
+    res.status(500).json({ error: 'No se pudieron revisar las ubicaciones.' });
+  }
+});
+
+// GET /clientes/geo-dudosos?sucursalId=&estado=revisar|no_coincide|todos&page=&limit=
+router.get('/geo-dudosos', async (req, res) => {
+  const alcance = sucursalDeGeo(req);
+
+  if (!alcance.ok) return res.status(alcance.status ?? 400).json({ error: alcance.error });
+
+  try {
+    const estado = String(req.query.estado ?? 'todos');
+    const estados = estado === 'revisar' || estado === 'no_coincide' ? [estado] : ['revisar', 'no_coincide'];
+    const page = Math.max(1, parseInt(String(req.query.page)) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit)) || 25));
+    const donde = { activo: true, ...(alcance.sucursalId ? { sucursalId: alcance.sucursalId } : {}) };
+
+    const [total, filas, cuentas] = await Promise.all([
+      prisma.cliente.count({ where: { ...donde, geoEstado: { in: estados } } }),
+      prisma.cliente.findMany({
+        where: { ...donde, geoEstado: { in: estados } },
+        orderBy: [{ geoDistanciaKm: { sort: 'desc', nulls: 'last' } }, { nombre: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true, codigo: true, nombre: true, direccion: true, municipio: true, latitud: true, longitud: true,
+          geoEstado: true, geoDistanciaKm: true, geoVecinoId: true, geoFuente: true, geoAt: true,
+          sucursal: { select: { id: true, codigo: true, nombre: true } },
+        },
+      }),
+      prisma.cliente.groupBy({ by: ['geoEstado'], where: donde, _count: { _all: true } }),
+    ]);
+
+    const vecinoIds = [...new Set(filas.map((f) => f.geoVecinoId).filter((x): x is string => !!x))];
+    const vecinos = vecinoIds.length
+      ? await prisma.cliente.findMany({ where: { id: { in: vecinoIds } }, select: { id: true, nombre: true, direccion: true, latitud: true, longitud: true } })
+      : [];
+    const porId = new Map(vecinos.map((v) => [v.id, v]));
+
+    res.json({
+      total, page, limit,
+      cuentas: Object.fromEntries(cuentas.map((c) => [c.geoEstado ?? 'sin_evaluar', c._count._all])),
+      items: filas.map((f) => ({
+        ...f,
+        // Sin distancia y «revisar» = no había calle con referencia pero el punto está lejísimos de su municipio.
+        motivo: f.geoDistanciaKm == null ? 'lejos_del_municipio' : 'calle',
+        vecino: f.geoVecinoId ? porId.get(f.geoVecinoId) ?? null : null,
+      })),
+    });
+  } catch (err) {
+    console.error('geo-dudosos error:', err);
+    res.status(500).json({ error: 'No se pudo leer la lista.' });
+  }
+});
+
+/** El cliente, si es de la sucursal de quien pide (o es global). */
+async function clienteParaGeo(req: express.Request, res: express.Response) {
+  const ctx = getRequesterContext(req);
+  const alcance = sucursalDeGeo(req);
+
+  if (!alcance.ok) {
+    res.status(alcance.status ?? 400).json({ error: alcance.error });
+    return null;
+  }
+
+  const c = await prisma.cliente.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, sucursalId: true, latitud: true, longitud: true },
+  });
+
+  if (!c || (!ctx.isGlobalAdmin && c.sucursalId !== ctx.sucursalId)) {
+    res.status(404).json({ error: 'Cliente no encontrado.' });
+    return null;
+  }
+
+  return { c, ctx };
+}
+
+// POST /clientes/:id/geo-confirmar   body: { motivo }  — el supervisor da el punto por bueno.
+router.post('/:id/geo-confirmar', async (req, res) => {
+  const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+
+  if (motivo.length < 3 || motivo.length > 200) return res.status(400).json({ error: 'Escribe un motivo corto (3 a 200 letras).' });
+
+  try {
+    const r = await clienteParaGeo(req, res);
+
+    if (!r) return;
+
+    const por = r.ctx.username ?? 'desconocido';
+
+    await prisma.$transaction([
+      prisma.cliente.update({
+        where: { id: r.c.id },
+        data: { geoEstado: 'confirmado', geoRevisadoPor: por, geoRevisadoAt: new Date(), geoMotivo: motivo },
+      }),
+      // Queda apuntado quién y cuándo, junto a los demás cambios de ubicación del cliente.
+      prisma.clienteGeoCambio.create({
+        data: {
+          clienteId: r.c.id,
+          latitudAnterior: r.c.latitud, longitudAnterior: r.c.longitud,
+          latitudNueva: r.c.latitud, longitudNueva: r.c.longitud,
+          fuente: `confirmada:${por}`.slice(0, 120),
+        },
+      }),
+    ]);
+    res.json({ ok: true, estado: 'confirmado' });
+  } catch (err) {
+    console.error('geo-confirmar error:', err);
+    res.status(500).json({ error: 'No se pudo confirmar.' });
+  }
+});
+
+// PATCH /clientes/:id/geo   body: { latitud, longitud }  — el supervisor corrige el punto.
+router.patch('/:id/geo', async (req, res) => {
+  const lat = Number(req.body?.latitud);
+  const lon = Number(req.body?.longitud);
+
+  if (!puntoEnCuba(lat, lon)) return res.status(400).json({ error: 'Esas coordenadas no caen en Cuba: revisa latitud y longitud.' });
+
+  try {
+    const r = await clienteParaGeo(req, res);
+
+    if (!r) return;
+
+    const por = r.ctx.username ?? 'desconocido';
+
+    await prisma.$transaction([
+      prisma.clienteGeoCambio.create({
+        data: {
+          clienteId: r.c.id,
+          latitudAnterior: r.c.latitud, longitudAnterior: r.c.longitud,
+          latitudNueva: lat, longitudNueva: lon,
+          fuente: `usuario:${por}`.slice(0, 120),
+        },
+      }),
+      prisma.cliente.update({
+        where: { id: r.c.id },
+        data: {
+          latitud: lat, longitud: lon, geolocalizacion: `${lat},${lon}`, geoFuente: `usuario:${por}`.slice(0, 120), geoAt: new Date(),
+          // La distancia al almacén se midió desde donde el cliente estaba: se borra para que se recalcule.
+          distanciaKm: null, distanciaDesde: null, distanciaAt: null,
+          geoEstado: null, geoDistanciaKm: null, geoVecinoId: null, geoRevisadoPor: null, geoRevisadoAt: null, geoMotivo: null,
+        },
+      }),
+    ]);
+    // El reparto trabaja con dónde está el cliente: que se entere de que se movió.
+    avisarAlReparto({ id: r.c.id, sucursalId: r.c.sucursalId, entidad: 'cliente', motivo: 'cliente', accion: 'update' });
+
+    // Se vuelve a comparar su sucursal (tarda menos de un segundo) y se devuelve cómo quedó este cliente.
+    await evaluarGeoClientes(r.c.sucursalId ?? undefined);
+
+    const c = await prisma.cliente.findUnique({
+      where: { id: r.c.id },
+      select: { id: true, latitud: true, longitud: true, geoEstado: true, geoDistanciaKm: true },
+    });
+
+    res.json({ ok: true, cliente: c });
+  } catch (err) {
+    console.error('geo-corregir error:', err);
+    res.status(500).json({ error: 'No se pudo corregir la ubicación.' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;

@@ -34,6 +34,7 @@ const ListaUsuariosPage = lazy(() => import("./pages/usuarios/lista-usuarios"));
 const VendedoresPage = lazy(() => import("./pages/vendedores/vendedores"));
 const LiberacionPage = lazy(() => import("./pages/liberacion/liberacion"));
 const ClientesPage = lazy(() => import("./pages/clientes/clientes"));
+const UbicacionesClientesPage = lazy(() => import("./pages/clientes/ubicaciones"));
 const MiPerfilPage = lazy(() => import("./pages/perfil/mi-perfil"));
 const ConfiguracionPage = lazy(
   () => import("./pages/configuracion/configuracion"),
@@ -163,6 +164,21 @@ function App() {
               }
             >
               <Route element={<LiberacionPage />} path="/panel/liberacion" />
+            </Route>
+
+            {/* Ubicaciones de clientes que no coinciden con su dirección (issue #13): Supervisor para
+              arriba; el servidor los exige igual. */}
+            <Route
+              element={
+                <AdminRoute
+                  allowedRoles={["Administrador", "Supervisor", "Gerente"]}
+                />
+              }
+            >
+              <Route
+                element={<UbicacionesClientesPage />}
+                path="/panel/clientes/ubicaciones"
+              />
             </Route>
 
             {/* Clientes */}
