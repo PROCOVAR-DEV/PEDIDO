@@ -1037,7 +1037,7 @@ export const OrdersList = ({
   // cambia algo de lo que los chips enseñan.
   const filasHistorial = useFilasHistorial(
     selectedOrder?.id,
-    `${selectedOrder?.estado}|${selectedOrder?.pedido_cobrado}|${selectedOrder?.requiere_domicilio}|${selectedOrder?.costoDomicilio}`,
+    `${selectedOrder?.estado}|${selectedOrder?.pedido_cobrado}|${selectedOrder?.requiere_domicilio}|${selectedOrder?.costoDomicilio}|${selectedOrder?.facturaEstado}|${selectedOrder?.facturaNumero}`,
   );
 
   /**
@@ -2772,6 +2772,11 @@ export const OrdersList = ({
                               </span>{" "}
                               · mismos productos y mismas cantidades
                             </p>
+                            <CuandoCambio
+                              concepto="factura"
+                              desde={selectedOrder.facturaAt}
+                              filas={filasHistorial}
+                            />
                           </>
                         ) : selectedOrder.facturaEstado === "cambiado" ? (
                           <>
@@ -2800,6 +2805,11 @@ export const OrdersList = ({
                                   })()
                                 : ""}
                             </p>
+                            <CuandoCambio
+                              concepto="factura"
+                              desde={selectedOrder.facturaAt}
+                              filas={filasHistorial}
+                            />
                           </>
                         ) : (
                           <p className="text-sm text-default-600">Sin facturar todavía.</p>

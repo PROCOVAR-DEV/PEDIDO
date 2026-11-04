@@ -54,6 +54,7 @@ import { unoALaVez } from './unoALaVez';
 import { arrancarCarril } from './carrilEnCola';
 import { facturaCompletaQueue, facturaRapidoQueue } from './queues';
 import { anotarHistorial } from './historialPedido';
+import { filaDeFactura } from './facturaHistorial';
 import { cajeroDeLasFacturas } from './cajeroVentra';
 import prisma from '../prismaClient';
 import type { Prisma } from '@prisma/client';
@@ -731,6 +732,18 @@ async function cotejarUnPedido(
     await anotarHistorial({ origen: 'sistema', por: String(completar?.completadoPor ?? POR_LA_FACTURA) }, [
       ...(completar ? [{ pedidoId: p.id, tipo: 'completado' as const, nota: r.numero ? `Factura ${r.numero}` : 'Con factura' }] : []),
       ...(corregido ? [{ pedidoId: p.id, tipo: 'editado' as const, campo: 'Líneas del pedido', nota: `Reescritas con la factura ${r.numero}` }] : []),
+      // Cuándo apareció la factura, o cambió, o dejó de encontrarse. `cotejoNuevo` ya dice si cambió algo.
+      ...(cotejoNuevo
+        ? (() => {
+            const f = filaDeFactura(
+              p.id,
+              { estado: p.facturaEstado, numero: p.facturaNumero },
+              { estado: r.estado, numero: r.numero, diferencias: r.diferencias },
+            );
+
+            return f ? [f] : [];
+          })()
+        : []),
       ...(cambioDomicilio
         ? [{
             pedidoId: p.id,

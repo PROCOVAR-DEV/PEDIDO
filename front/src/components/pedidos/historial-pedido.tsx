@@ -141,12 +141,13 @@ export function useFilasHistorial(
   return filas;
 }
 
-export type Concepto = "estado" | "cobro" | "domicilio";
+export type Concepto = "estado" | "cobro" | "domicilio" | "factura";
 
 const CAMPOS: Record<Concepto, string[]> = {
   estado: [],
   cobro: ["Cobro"],
   domicilio: ["Domicilio", "Requiere domicilio"],
+  factura: ["Factura"],
 };
 
 /** La última fila que tocó ese concepto, o null. El estado cambia con «completado» y «reabierto». */
@@ -181,13 +182,39 @@ const corto = (iso: string) =>
 export const CuandoCambio = ({
   filas,
   concepto,
+  desde,
 }: {
   filas: Fila[] | null;
   concepto: Concepto;
+  /** Para la factura de antes de que el historial apuntara esto: la hora a la que se cotejó. */
+  desde?: string | null;
 }) => {
   if (!filas) return null;
 
   const f = ultimoCambio(filas, concepto);
+
+  // La factura solo habla de cuándo APARECIÓ: sin cambio apuntado se usa la hora del cotejo.
+  if (concepto === "factura") {
+    const cuandoFue = f?.at ?? desde;
+
+    if (!cuandoFue) return null;
+
+    return (
+      <Tooltip
+        content={
+          f
+            ? `${cambio(f)} · ${porDonde(f)}`
+            : "Hora en que PEDIDO comprobó la factura"
+        }
+        placement="bottom"
+      >
+        <span className="cursor-help text-[11px] tabular-nums text-default-500">
+          {`facturado ${f?.nota?.startsWith("Reconstruido") ? "~" : ""}${corto(cuandoFue)}`}
+        </span>
+      </Tooltip>
+    );
+  }
+
   const entrada = filas.find((x) => x.tipo === "creado") ?? null;
   const base = f ?? entrada;
 
