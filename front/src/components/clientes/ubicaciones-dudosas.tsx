@@ -98,14 +98,75 @@ const km = (v: number) =>
 const abrirMapa = (lat: number, lon: number) =>
   `https://www.google.com/maps?q=${lat},${lon}`;
 
-/** El mapa que se incrusta: el punto del cliente y, si hay, el del cliente de su calle (con la ruta entre los dos). */
-const mapaIncrustado = (
-  it: { latitud: number; longitud: number },
-  v?: Vecino | null,
-) =>
-  v?.latitud != null && v?.longitud != null
-    ? `https://maps.google.com/maps?saddr=${it.latitud},${it.longitud}&daddr=${v.latitud},${v.longitud}&output=embed`
-    : `https://maps.google.com/maps?q=${it.latitud},${it.longitud}&z=16&output=embed`;
+/** Dónde dice el texto de la dirección que está el cliente: lo busca Google. */
+const textoDeLaDireccion = (it: {
+  direccion: string | null;
+  municipio: string | null;
+  sucursal: { nombre: string } | null;
+}) =>
+  [it.direccion, it.municipio ?? it.sucursal?.nombre, "Cuba"]
+    .filter(Boolean)
+    .join(", ");
+
+const mapaDeLaDireccion = (it: Parameters<typeof textoDeLaDireccion>[0]) =>
+  `https://maps.google.com/maps?q=${encodeURIComponent(textoDeLaDireccion(it))}&z=15&output=embed`;
+
+const mapaDelPunto = (it: { latitud: number; longitud: number }) =>
+  `https://maps.google.com/maps?q=${it.latitud},${it.longitud}&z=15&output=embed`;
+
+/** La dirección escrita contra el punto guardado, cada uno en su mapa: lo que hay que comparar. */
+function MapasComparados({ it, alto = "h-64" }: { it: Item; alto?: string }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-default-500">
+          Donde dice la dirección:{" "}
+          <span className="font-medium text-default-700">
+            {it.direccion || "sin dirección"}
+          </span>
+        </p>
+        <iframe
+          className={`${alto} w-full rounded-lg border border-default-200`}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          src={mapaDeLaDireccion(it)}
+          title={`Dirección de ${it.nombre}`}
+        />
+        <a
+          className="text-xs text-primary underline"
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(textoDeLaDireccion(it))}`}
+          rel="noreferrer"
+          target="_blank"
+        >
+          Abrir la dirección en Google Maps
+        </a>
+      </div>
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-default-500">
+          Donde cae el punto guardado:{" "}
+          <span className="font-medium text-default-700">
+            {it.latitud.toFixed(5)}, {it.longitud.toFixed(5)}
+          </span>
+        </p>
+        <iframe
+          className={`${alto} w-full rounded-lg border border-default-200`}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          src={mapaDelPunto(it)}
+          title={`Punto de ${it.nombre}`}
+        />
+        <a
+          className="text-xs text-primary underline"
+          href={abrirMapa(it.latitud, it.longitud)}
+          rel="noreferrer"
+          target="_blank"
+        >
+          Abrir el punto en Google Maps
+        </a>
+      </div>
+    </div>
+  );
+}
 
 const fuenteDelPunto = (f: string | null, cuando: string | null) => {
   const quien = !f
@@ -453,10 +514,8 @@ export function UbicacionesDudosas() {
                     <Tooltip
                       content={
                         mapas[it.id]
-                          ? "Ocultar el mapa"
-                          : it.vecino
-                            ? "Ver los dos puntos en el mapa"
-                            : "Ver el punto en el mapa"
+                          ? "Ocultar los mapas"
+                          : "Ver la dirección y el punto en el mapa"
                       }
                     >
                       <Button
@@ -475,30 +534,7 @@ export function UbicacionesDudosas() {
                   </div>
                 </div>
 
-                {mapas[it.id] && (
-                  <div className="flex flex-col gap-2">
-                    <iframe
-                      className="h-72 w-full rounded-lg border border-default-200"
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                      src={mapaIncrustado(it, it.vecino)}
-                      title={`Mapa de ${it.nombre}`}
-                    />
-                    <p className="text-xs text-default-500">
-                      {it.vecino
-                        ? "El mapa traza el camino desde el punto de este cliente hasta el cliente de su calle con el que se comparó."
-                        : "Este es el punto del cliente."}{" "}
-                      <a
-                        className="text-primary underline"
-                        href={abrirMapa(it.latitud, it.longitud)}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        Abrir en Google Maps
-                      </a>
-                    </p>
-                  </div>
-                )}
+                {mapas[it.id] && <MapasComparados it={it} />}
               </CardBody>
             </Card>
           ))}
@@ -567,15 +603,7 @@ export function UbicacionesDudosas() {
             <p className="text-sm text-default-600">
               {corrigiendo?.nombre}: {corrigiendo?.direccion || "sin dirección"}
             </p>
-            {corrigiendo && (
-              <iframe
-                className="h-56 w-full rounded-lg border border-default-200"
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                src={mapaIncrustado(corrigiendo, corrigiendo.vecino)}
-                title={`Mapa de ${corrigiendo.nombre}`}
-              />
-            )}
+            {corrigiendo && <MapasComparados alto="h-48" it={corrigiendo} />}
             <Input
               description="En Google Maps, haz clic derecho sobre el sitio correcto y copia las coordenadas. También vale pegar el enlace del mapa."
               label="Punto nuevo"
