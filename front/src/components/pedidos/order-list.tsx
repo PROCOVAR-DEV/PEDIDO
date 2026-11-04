@@ -52,7 +52,7 @@ import {
   guardarMoneda,
   type Moneda,
 } from "@/lib/moneda";
-import { HistorialPedido } from "./historial-pedido";
+import { CuandoCambio, HistorialPedido, useFilasHistorial } from "./historial-pedido";
 import { PapeleraBorrados } from "./papelera-borrados";
 import { VendedoresCopiar } from "./vendedores-copiar";
 
@@ -1032,6 +1032,13 @@ export const OrdersList = ({
   if (vivo) ultimo.current = vivo;
   const selectedOrder: Order | null =
     vivo ?? (selectedOrderId ? ultimo.current : null);
+
+  // El historial del pedido abierto: de ahí sale CUÁNDO cambió cada chip de estado. Se vuelve a pedir cuando
+  // cambia algo de lo que los chips enseñan.
+  const filasHistorial = useFilasHistorial(
+    selectedOrder?.id,
+    `${selectedOrder?.estado}|${selectedOrder?.pedido_cobrado}|${selectedOrder?.requiere_domicilio}|${selectedOrder?.costoDomicilio}`,
+  );
 
   /**
    * El peso del pedido entero, y cuántas líneas no lo traen.
@@ -2674,49 +2681,58 @@ export const OrdersList = ({
                     <h4 className="mb-2 text-sm font-semibold text-default-700">
                       Estado
                     </h4>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Chip
-                        color={
-                          estadoColors[selectedOrder?.estado || "en_proceso"]
-                        }
-                        size="sm"
-                        variant="flat"
-                      >
-                        {estadoLabels[selectedOrder?.estado || "en_proceso"]}
-                      </Chip>
-
-                      {selectedOrder?.pedido_cobrado != null && (
+                    <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+                      <div className="flex flex-col items-start gap-0.5">
                         <Chip
                           color={
-                            selectedOrder.pedido_cobrado === "parcial"
-                              ? "warning"
-                              : selectedOrder.pedido_cobrado === "no_pagado"
-                                ? "danger"
-                                : "success"
+                            estadoColors[selectedOrder?.estado || "en_proceso"]
                           }
                           size="sm"
                           variant="flat"
                         >
-                          {selectedOrder.pedido_cobrado === "parcial"
-                            ? "Parcialmente cobrado"
-                            : selectedOrder.pedido_cobrado === "no_pagado"
-                              ? "No cobrado"
-                              : "Cobrado"}
+                          {estadoLabels[selectedOrder?.estado || "en_proceso"]}
                         </Chip>
+                        <CuandoCambio concepto="estado" filas={filasHistorial} />
+                      </div>
+
+                      {selectedOrder?.pedido_cobrado != null && (
+                        <div className="flex flex-col items-start gap-0.5">
+                          <Chip
+                            color={
+                              selectedOrder.pedido_cobrado === "parcial"
+                                ? "warning"
+                                : selectedOrder.pedido_cobrado === "no_pagado"
+                                  ? "danger"
+                                  : "success"
+                            }
+                            size="sm"
+                            variant="flat"
+                          >
+                            {selectedOrder.pedido_cobrado === "parcial"
+                              ? "Parcialmente cobrado"
+                              : selectedOrder.pedido_cobrado === "no_pagado"
+                                ? "No cobrado"
+                                : "Cobrado"}
+                          </Chip>
+                          <CuandoCambio concepto="cobro" filas={filasHistorial} />
+                        </div>
                       )}
-                      <Chip
-                        color={
-                          selectedOrder?.requiere_domicilio
-                            ? "primary"
-                            : "default"
-                        }
-                        size="sm"
-                        variant="flat"
-                      >
-                        {selectedOrder?.requiere_domicilio
-                          ? "Requiere domicilio"
-                          : "Sin domicilio"}
-                      </Chip>
+                      <div className="flex flex-col items-start gap-0.5">
+                        <Chip
+                          color={
+                            selectedOrder?.requiere_domicilio
+                              ? "primary"
+                              : "default"
+                          }
+                          size="sm"
+                          variant="flat"
+                        >
+                          {selectedOrder?.requiere_domicilio
+                            ? "Requiere domicilio"
+                            : "Sin domicilio"}
+                        </Chip>
+                        <CuandoCambio concepto="domicilio" filas={filasHistorial} />
+                      </div>
                     </div>
 
                   </div>
