@@ -1,6 +1,5 @@
-import { Link } from "react-router-dom";
-
 import { ClientesList } from "@/components/clientes/clientes-list";
+import { EnlaceUbicaciones } from "@/components/clientes/enlace-ubicaciones";
 import { NavigationHeading } from "@/components/navigation-heading";
 
 export default function ClientesPage() {
@@ -13,15 +12,7 @@ export default function ClientesPage() {
         title="Clientes"
       />
 
-      <p className="text-sm">
-        <Link
-          className="text-primary underline"
-          to="/panel/clientes/ubicaciones"
-        >
-          Ubicaciones por revisar
-        </Link>{" "}
-        — clientes cuyo punto no cae donde dice su dirección.
-      </p>
+      <EnlaceUbicaciones />
 
       <ClientesList />
     </section>

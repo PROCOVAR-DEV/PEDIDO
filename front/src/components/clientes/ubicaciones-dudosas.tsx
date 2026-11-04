@@ -13,6 +13,7 @@ import {
   Spinner,
   Tab,
   Tabs,
+  Tooltip,
   addToast,
 } from "@heroui/react";
 import { useCallback, useEffect, useState } from "react";
@@ -68,6 +69,28 @@ const MOTIVOS = [
   "Confirmado con el cliente",
   "Es una zona rural",
 ];
+
+const Icono = ({ d }: { d: string }) => (
+  <svg
+    aria-hidden="true"
+    fill="none"
+    height="18"
+    stroke="currentColor"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    strokeWidth="2"
+    viewBox="0 0 24 24"
+    width="18"
+  >
+    <path d={d} />
+  </svg>
+);
+
+const Visto = () => <Icono d="M5 13l4 4L19 7" />;
+const Lapiz = () => <Icono d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />;
+const Mapa = () => (
+  <Icono d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14" />
+);
 
 const km = (v: number) =>
   (v < 10 ? v.toFixed(1) : Math.round(v).toString()).replace(".", ",");
@@ -359,11 +382,11 @@ export function UbicacionesDudosas() {
               className="border border-default-200"
               shadow="none"
             >
-              <CardBody className="gap-4 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <CardBody className="gap-2 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base font-semibold">{it.nombre}</h3>
+                      <h3 className="text-sm font-semibold">{it.nombre}</h3>
                       <Chip
                         color={
                           it.geoEstado === "no_coincide" ? "danger" : "warning"
@@ -378,12 +401,12 @@ export function UbicacionesDudosas() {
                           ? ` · ${km(it.geoDistanciaKm)} km`
                           : ""}
                       </Chip>
+                      <span className="text-xs text-default-500">
+                        {[it.sucursal?.codigo, it.codigo, it.municipio]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
                     </div>
-                    <p className="text-xs text-default-500">
-                      {[it.sucursal?.codigo, it.codigo, it.municipio]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
                     <p className="text-sm">
                       <span className="text-default-500">Dirección: </span>
                       <span className="font-medium">
@@ -396,40 +419,59 @@ export function UbicacionesDudosas() {
                     </p>
                   </div>
 
-                  <div className="flex w-full flex-col gap-2 sm:w-52">
-                    <Button
-                      color="success"
-                      variant="solid"
-                      onPress={() => {
-                        setConfirmando(it);
-                        setMotivo("");
-                      }}
-                    >
-                      El punto está bien
-                    </Button>
-                    <Button
-                      color="primary"
-                      variant="bordered"
-                      onPress={() => {
-                        setCorrigiendo(it);
-                        setPunto("");
-                      }}
-                    >
-                      Corregir el punto
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="light"
-                      onPress={() =>
-                        setMapas((m) => ({ ...m, [it.id]: !m[it.id] }))
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Tooltip content="El punto está bien">
+                      <Button
+                        isIconOnly
+                        aria-label="El punto está bien"
+                        color="success"
+                        size="sm"
+                        variant="flat"
+                        onPress={() => {
+                          setConfirmando(it);
+                          setMotivo("");
+                        }}
+                      >
+                        <Visto />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content="Corregir el punto">
+                      <Button
+                        isIconOnly
+                        aria-label="Corregir el punto"
+                        color="primary"
+                        size="sm"
+                        variant="flat"
+                        onPress={() => {
+                          setCorrigiendo(it);
+                          setPunto("");
+                        }}
+                      >
+                        <Lapiz />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip
+                      content={
+                        mapas[it.id]
+                          ? "Ocultar el mapa"
+                          : it.vecino
+                            ? "Ver los dos puntos en el mapa"
+                            : "Ver el punto en el mapa"
                       }
                     >
-                      {mapas[it.id]
-                        ? "Ocultar el mapa"
-                        : it.vecino
-                          ? "Ver los dos puntos"
-                          : "Ver el punto en el mapa"}
-                    </Button>
+                      <Button
+                        isIconOnly
+                        aria-label="Ver en el mapa"
+                        color={mapas[it.id] ? "secondary" : "default"}
+                        size="sm"
+                        variant="flat"
+                        onPress={() =>
+                          setMapas((m) => ({ ...m, [it.id]: !m[it.id] }))
+                        }
+                      >
+                        <Mapa />
+                      </Button>
+                    </Tooltip>
                   </div>
                 </div>
 
