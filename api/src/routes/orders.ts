@@ -2915,6 +2915,16 @@ async function processOrderRecord(
       });
     }
 
+    // Si lo que se editó invalida el costo del domicilio, se apunta CUÁNDO se perdió y cuánto era: luego Entrega
+    // lo recalcula y queda la otra fila, la del importe nuevo.
+    if (invalidarCosto && existingOrder.costoDomicilio != null) {
+      cambios.push({
+        campo: 'Costo de domicilio',
+        antes: String(Math.round(existingOrder.costoDomicilio * 100) / 100),
+        despues: 'sin costo (se vuelve a calcular)',
+      });
+    }
+
     await anotarHistorial(contexto, cambios.map((c) => ({ pedidoId: existingOrder.id, tipo: 'editado' as const, ...c })));
 
     /*
