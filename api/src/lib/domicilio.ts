@@ -6,6 +6,8 @@
 // la mercancía ya hecho y sin la línea de domicilio, y vuelve sólo con esa línea.
 import prisma from '../prismaClient';
 import { avisarAlReparto, avisarQueYaNoVa } from './avisoAlReparto';
+import { anotarHistorial } from './historialPedido';
+import { filasDeDomicilio, type EstadoDomicilio } from './domicilioHistorial';
 import { tasaActual } from './tasaCambio';
 import { normalizarProducto, variantesProducto, porContenido } from './nombreProducto';
 import { readConfiguredSucursalId } from './sucursalLocal';
@@ -83,13 +85,24 @@ function redondear(v: number | null | undefined): number | null {
  *
  * El folio lo sabemos: lo tiene el pedido que acabamos de mirar. Se devuelve y ya.
  */
-async function datosDelPedido(pedidoId: string): Promise<{ folio: string | null; marcado: boolean }> {
+async function datosDelPedido(
+  pedidoId: string,
+): Promise<{ folio: string | null; marcado: boolean; costo: number | null; tasa: number | null }> {
   const p = await prisma.pedido.findUnique({
     where: { id: pedidoId },
-    select: { folio: true, requiere_domicilio: true },
+    select: { folio: true, requiere_domicilio: true, costoDomicilio: true, tasaDomicilio: true },
   });
 
-  return { folio: p?.folio ?? null, marcado: p?.requiere_domicilio === true };
+  return {
+    folio: p?.folio ?? null,
+    marcado: p?.requiere_domicilio === true,
+    costo: p?.costoDomicilio ?? null,
+    tasa: p?.tasaDomicilio ?? null,
+  };
+}
+
+async function apuntarDomicilioDeEntrega(pedidoId: string, antes: EstadoDomicilio, despues: EstadoDomicilio): Promise<void> {
+  await anotarHistorial({ origen: 'sistema', por: 'Entrega', fuente: 'Entrega' }, filasDeDomicilio(pedidoId, antes, despues));
 }
 
 export async function aplicarCostoDomicilio(u: {
@@ -380,7 +393,7 @@ export async function aplicarCostoDomicilio(u: {
 
   if (u.pedidoId) {
     const id = String(u.pedidoId);
-    const { folio: suFolio, marcado } = await datosDelPedido(id);
+    const { folio: suFolio, marcado, costo: costoAntes, tasa: tasaAntes } = await datosDelPedido(id);
 
   /**
    * UN COSTO QUE LLEGA ES UN DOMICILIO QUE EXISTE, lo dijera la bandera o no.
@@ -420,6 +433,11 @@ export async function aplicarCostoDomicilio(u: {
       cambios.costo = true;
       cambios.tasa = tasaValida != null;
       cambios.domicilioActivado = !marcado;
+      await apuntarDomicilioDeEntrega(
+        id,
+        { marcado, costo: costoAntes, tasa: tasaAntes },
+        { marcado: true, costo, tasa: tasaValida },
+      );
     }
     return r.count > 0
       ? { ok: true, pedidoId: id, folio: suFolio ?? undefined, cambios }
@@ -538,7 +556,7 @@ export async function aplicarCostoDomicilio(u: {
     }
 
     // Mismo criterio que arriba: si llega el costo, el domicilio existe. Ver la nota.
-    const { marcado } = await datosDelPedido(elegidos[0].id);
+    const { marcado, costo: costoAntes, tasa: tasaAntes } = await datosDelPedido(elegidos[0].id);
 
     await prisma.pedido.update({
       where: { id: elegidos[0].id },
@@ -555,6 +573,11 @@ export async function aplicarCostoDomicilio(u: {
     cambios.costo = true;
     cambios.tasa = tasaValida != null;
     cambios.domicilioActivado = !marcado;
+    await apuntarDomicilioDeEntrega(
+      elegidos[0].id,
+      { marcado, costo: costoAntes, tasa: tasaAntes },
+      { marcado: true, costo, tasa: tasaValida },
+    );
 
     // Se devuelve el folio NUESTRO, con su sufijo si lo lleva: es el que hay que usar
     // para hablar de ese pedido, y quien lo mandó se entera de cuál le tocó.
@@ -666,6 +689,14 @@ export async function cancelarDomicilio(u: {
   if (grupos.count > 0) deshecho.push('grupos');
 
   if (Object.keys(data).length) await prisma.pedido.update({ where: { id: pedido.id }, data });
+
+  if (deshecho.includes('costo') || deshecho.includes('requiereDomicilio')) {
+    await apuntarDomicilioDeEntrega(
+      pedido.id,
+      { marcado: deshecho.includes('requiereDomicilio') ? true : false, costo: pedido.costoDomicilio, tasa: null },
+      { marcado: false, costo: deshecho.includes('costo') ? null : pedido.costoDomicilio, tasa: null },
+    );
+  }
 
   if (deshecho.length) {
     // eslint-disable-next-line no-console
