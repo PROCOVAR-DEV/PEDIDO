@@ -23,21 +23,14 @@ import { getApiBaseUrl } from "@/config";
 /**
  * Ubicaciones por revisar (issue #13): clientes cuyo punto no cae donde dice su dirección.
  *
- * El punto se compara con los OTROS clientes de la misma calle (ver `api/src/lib/geoDireccion.ts`).
+ * La dirección escrita se compara con lo que el mapa dice del punto (calle, barrio, municipio) y con dónde
+ * ubica el mapa el texto de la dirección (ver `api/src/lib/geoComprobacion.ts`).
  * Es un aviso: el supervisor decide si el punto está bien (lo confirma, con un motivo) o lo corrige.
  * Queda apuntado quién y cuándo.
  *
- * Una tarjeta por cliente, con la frase que explica POR QUÉ salta el aviso y, en un clic, el mapa con
- * el punto del cliente y el del cliente de su calle con el que se comparó: la decisión es visual.
+ * Una tarjeta por cliente, con la frase que explica POR QUÉ salta el aviso y, en un clic, la dirección
+ * y el punto cada uno en su mapa: la decisión es visual.
  */
-
-interface Vecino {
-  id: string;
-  nombre: string;
-  direccion: string | null;
-  latitud: number | null;
-  longitud: number | null;
-}
 
 interface Item {
   id: string;
@@ -51,14 +44,19 @@ interface Item {
   geoDistanciaKm: number | null;
   geoFuente: string | null;
   geoAt: string | null;
-  motivo: "calle" | "lejos_del_municipio";
-  vecino: Vecino | null;
+  delPunto: {
+    calle: string | null;
+    barrio: string | null;
+    municipios: string[];
+  } | null;
+  dondeSeUbicaLaDireccion: { latitud: number; longitud: number } | null;
   sucursal: { codigo: string | null; nombre: string } | null;
 }
 
 interface Respuesta {
   total: number;
   limit: number;
+  pendientes: number;
   cuentas: Record<string, number>;
   items: Item[];
 }
@@ -204,29 +202,45 @@ function leerPunto(texto: string): { lat: number; lon: number } | null {
 }
 
 function Explicacion({ it }: { it: Item }) {
-  if (it.motivo === "lejos_del_municipio") {
-    return (
-      <p className="text-sm text-default-700">
-        Su punto está muy lejos del resto de los clientes de{" "}
-        {it.municipio || "su municipio"}, y en esta calle no hay otros clientes
-        con los que compararlo.
-      </p>
-    );
-  }
+  const p = it.delPunto;
+  const donde = p
+    ? [
+        p.calle ? `la calle ${p.calle}` : "ninguna calle conocida",
+        p.barrio ? `barrio ${p.barrio}` : null,
+        p.municipios[0] ? `municipio ${p.municipios[0]}` : null,
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : "nada conocido";
+  const otroMunicipio =
+    !!p?.municipios.length &&
+    !!it.municipio &&
+    !p.municipios.some((m) => {
+      const a = m.toLowerCase();
+      const b = it.municipio!.toLowerCase();
+
+      return a.includes(b) || b.includes(a);
+    });
 
   return (
-    <p className="text-sm text-default-700">
-      Su punto cae a <strong>{km(it.geoDistanciaKm ?? 0)} km</strong> del
-      cliente más cercano de esta calle
-      {it.vecino ? (
-        <>
-          : {it.vecino.nombre}
-          {it.vecino.direccion ? ` (${it.vecino.direccion})` : ""}.
-        </>
-      ) : (
-        "."
-      )}
-    </p>
+    <div className="flex flex-col gap-1 text-sm text-default-700">
+      <p>
+        La dirección dice <strong>{it.direccion || "—"}</strong>
+        {it.municipio ? ` (${it.municipio})` : ""}. En el punto guardado el mapa
+        ve {donde}.
+      </p>
+      {otroMunicipio ? (
+        <p>El punto cae en otro municipio que el de la dirección.</p>
+      ) : null}
+      {it.geoDistanciaKm != null ? (
+        <p>
+          El mapa ubica la dirección a{" "}
+          <strong>{km(it.geoDistanciaKm)} km</strong> del punto guardado.
+        </p>
+      ) : !otroMunicipio && it.dondeSeUbicaLaDireccion == null ? (
+        <p>El mapa no supo ubicar la dirección escrita.</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -417,10 +431,14 @@ export function UbicacionesDudosas() {
       </div>
 
       <p className="max-w-3xl text-sm text-default-500">
-        Cada cliente se compara con los demás de su misma calle. Si su punto cae
-        lejos, aparece aquí. Es un aviso: tú decides si el punto está bien o hay
-        que corregirlo.
+        La dirección de cada cliente se compara con su punto: lo que el mapa ve
+        en ese punto (calle, barrio, municipio) y dónde ubica el mapa la
+        dirección escrita. Si no coinciden, aparece aquí. Es un aviso: tú
+        decides si el punto está bien o hay que corregirlo.
         {c.confirmado ? ` Ya confirmaste ${c.confirmado}.` : ""}
+        {datos?.pendientes
+          ? ` Faltan por comprobar ${datos.pendientes} puntos; se van revisando solos, cada uno unos segundos.`
+          : ""}
       </p>
 
       {cargando && !datos ? (

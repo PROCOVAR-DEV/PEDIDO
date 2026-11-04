@@ -15,6 +15,7 @@ import { arrancarCotejoFacturacion, cotejarUnaVez } from './lib/cotejoFacturacio
 import { unoALaVez } from './lib/unoALaVez';
 import { tramosSemanales } from './lib/tramosSemanales';
 import { arrancarTelefonos } from './lib/telefonoCliente';
+import { arrancarGeocodificacion } from './lib/geoClientes';
 import { arrancarTasaCambio } from './lib/tasaCambio';
 
 /**
@@ -132,6 +133,9 @@ async function main() {
   // El teléfono del cliente, sacado de sus propios pedidos. Aquí y no en la API porque
   // es un repaso a toda la tabla: no puede colgar del arranque de quien atiende.
   arrancarTelefonos();
+
+  // La comprobación dirección ↔ ubicación (issue #13): pregunta al buscador de mapas, un punto por segundo.
+  arrancarGeocodificacion();
 
   arrancarWebhooks();
 

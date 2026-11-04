@@ -749,28 +749,37 @@ router.get('/geo-dudosos', async (req, res) => {
         take: limit,
         select: {
           id: true, codigo: true, nombre: true, direccion: true, municipio: true, latitud: true, longitud: true,
-          geoEstado: true, geoDistanciaKm: true, geoVecinoId: true, geoFuente: true, geoAt: true,
+          geoEstado: true, geoDistanciaKm: true, geoFuente: true, geoAt: true,
           sucursal: { select: { id: true, codigo: true, nombre: true } },
         },
       }),
       prisma.cliente.groupBy({ by: ['geoEstado'], where: donde, _count: { _all: true } }),
     ]);
 
-    const vecinoIds = [...new Set(filas.map((f) => f.geoVecinoId).filter((x): x is string => !!x))];
-    const vecinos = vecinoIds.length
-      ? await prisma.cliente.findMany({ where: { id: { in: vecinoIds } }, select: { id: true, nombre: true, direccion: true, latitud: true, longitud: true } })
+    const geos = filas.length
+      ? await prisma.clienteGeocodificacion.findMany({
+          where: { clienteId: { in: filas.map((f) => f.id) } },
+          select: { clienteId: true, latitud: true, longitud: true, calle: true, barrio: true, municipios: true, adelanteConsultado: true, adelanteLat: true, adelanteLon: true },
+        })
       : [];
-    const porId = new Map(vecinos.map((v) => [v.id, v]));
+    const porId = new Map(geos.map((g) => [g.clienteId, g]));
+    // Cuántos puntos todavía no se han consultado al buscador de mapas (la primera pasada tarda horas).
+    const pendientes = await prisma.cliente.count({ where: { ...donde, latitud: { not: null }, longitud: { not: null }, geoEstado: null } });
 
     res.json({
       total, page, limit,
+      pendientes,
       cuentas: Object.fromEntries(cuentas.map((c) => [c.geoEstado ?? 'sin_evaluar', c._count._all])),
-      items: filas.map((f) => ({
-        ...f,
-        // Sin distancia y «revisar» = no había calle con referencia pero el punto está lejísimos de su municipio.
-        motivo: f.geoDistanciaKm == null ? 'lejos_del_municipio' : 'calle',
-        vecino: f.geoVecinoId ? porId.get(f.geoVecinoId) ?? null : null,
-      })),
+      items: filas.map((f) => {
+        const g = porId.get(f.id);
+
+        return {
+          ...f,
+          // Lo que el mapa dice del punto y de la dirección, para que el supervisor vea por qué se avisa.
+          delPunto: g ? { calle: g.calle, barrio: g.barrio, municipios: g.municipios ? g.municipios.split('|') : [] } : null,
+          dondeSeUbicaLaDireccion: g?.adelanteConsultado && g.adelanteLat != null && g.adelanteLon != null ? { latitud: g.adelanteLat, longitud: g.adelanteLon } : null,
+        };
+      }),
     });
   } catch (err) {
     console.error('geo-dudosos error:', err);

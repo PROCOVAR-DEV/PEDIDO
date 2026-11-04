@@ -584,6 +584,30 @@ model ApiKey {
   @@map("ApiKey")
 }
 
+/// Lo que el buscador de mapas (OpenStreetMap) dice del PUNTO de un cliente y de su DIRECCIÓN escrita (issue #13).
+/// Con esto se comprueba que la dirección corresponde a la geolocalización, y al revés. Ver `lib/geoComprobacion.ts`.
+model ClienteGeocodificacion {
+  clienteId String @id
+  /// El punto que se consultó. Si el cliente se mueve, se vuelve a consultar.
+  latitud   Float
+  longitud  Float
+  /// Lo que hay en ese punto.
+  calle     String?
+  barrio    String?
+  /// Municipios que contesta el buscador para ese punto (varios: ciudad, condado…), separados por «|».
+  municipios String?
+  provincia String?
+  completo  String?
+  consultadoAt DateTime @default(now())
+  /// Dónde ubica el buscador el texto de la dirección. Solo se pide cuando la calle del punto no coincide.
+  adelanteConsultado Boolean   @default(false)
+  adelanteLat        Float?
+  adelanteLon        Float?
+  adelanteAt         DateTime?
+
+  @@map("ClienteGeocodificacion")
+}
+
 /// Cuando el nombre de Parranda y el de Ventra no se parecen lo bastante, alguien dice
 /// cuál es cuál.
 ///
