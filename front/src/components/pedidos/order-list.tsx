@@ -583,6 +583,7 @@ function comoSeLeeElDia(valor?: string | null): string | null {
 function comoSeLeeElInstante(valor?: string | null): string | null {
   if (!valor) return null;
   return new Date(valor).toLocaleString("es-ES", {
+    timeZone: zonaCuba(valor),
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

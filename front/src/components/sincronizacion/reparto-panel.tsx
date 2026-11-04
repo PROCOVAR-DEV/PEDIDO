@@ -1,8 +1,20 @@
-import { Button, Card, CardBody, CardHeader, Chip, Input, Snippet, Spinner, Switch, addToast } from "@heroui/react";
+import {
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  Input,
+  Snippet,
+  Spinner,
+  Switch,
+  addToast,
+} from "@heroui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getApiBaseUrl } from "@/config";
 import { useLiveEvents, useLiveStatus } from "@/hooks/use-live-events";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 /**
  * Las DOS direcciones entre PEDIDO y el reparto: configurarlas y ver si están vivas.
@@ -45,7 +57,12 @@ type Estado = {
     firmada: string;
     tieneClaves: boolean;
     recibidosHoy: number;
-    ultimo: { folio: string; estado: string | null; cuando: string; sucursalId: string | null } | null;
+    ultimo: {
+      folio: string;
+      estado: string | null;
+      cuando: string;
+      sucursalId: string | null;
+    } | null;
   };
 };
 
@@ -73,13 +90,26 @@ const hace = (ms: number | null | undefined) => {
 };
 
 const cuando = (iso: string | null | undefined) =>
-  iso ? new Date(iso).toLocaleString("es", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+  iso
+    ? new Date(iso).toLocaleString("es", {
+        timeZone: zonaCuba(iso),
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "—";
 
 /** El `ts` del aviso viene como texto porque en un stream de Redis todo es texto. */
-const cuandoMs = (ts: string | undefined) => cuando(ts ? new Date(Number(ts)).toISOString() : null);
+const cuandoMs = (ts: string | undefined) =>
+  cuando(ts ? new Date(Number(ts)).toISOString() : null);
 
 const colorMotivo = (m: string | undefined) =>
-  m === "borrado" ? ("danger" as const) : m === "factura" ? ("primary" as const) : ("default" as const);
+  m === "borrado"
+    ? ("danger" as const)
+    : m === "factura"
+      ? ("primary" as const)
+      : ("default" as const);
 
 export const RepartoSyncPanel = () => {
   const [estado, setEstado] = useState<Estado | null>(null);
@@ -104,7 +134,9 @@ export const RepartoSyncPanel = () => {
   const [secretNuevo, setSecretNuevo] = useState("");
 
   const base = getApiBaseUrl();
-  const cabeceras = () => ({ Authorization: `Bearer ${localStorage.getItem("auth_token")}` });
+  const cabeceras = () => ({
+    Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+  });
 
   // `cargar` se pasa a un listener que se registra una vez, así que leer `tocado`
   // directamente le daría siempre el valor del montaje. La ref ve el de ahora.
@@ -116,13 +148,23 @@ export const RepartoSyncPanel = () => {
 
   const cargar = useCallback(async () => {
     try {
-      const res = await fetch(`${base}/sincronizacion/reparto`, { headers: cabeceras() });
+      const res = await fetch(`${base}/sincronizacion/reparto`, {
+        headers: cabeceras(),
+      });
       const data = await res.json();
 
       if (!res.ok) throw new Error(data.error || "No se pudo leer el estado");
       setEstado(data);
       // Sólo mientras nadie haya escrito: después manda lo que tiene delante.
-      setForm((f) => (tocadoRef.current ? f : { url: data.enviar?.webhook?.url || "", key: data.enviar?.webhook?.key || "", secret: "" }));
+      setForm((f) =>
+        tocadoRef.current
+          ? f
+          : {
+              url: data.enviar?.webhook?.url || "",
+              key: data.enviar?.webhook?.key || "",
+              secret: "",
+            },
+      );
     } catch (e) {
       addToast({
         title: "No se pudo leer la sincronización",
@@ -142,11 +184,16 @@ export const RepartoSyncPanel = () => {
         const q = new URLSearchParams({ limite: String(POR_PAGINA) });
 
         if (antes) q.set("antes", antes);
-        const res = await fetch(`${base}/sincronizacion/reparto/avisos?${q}`, { headers: cabeceras() });
+        const res = await fetch(`${base}/sincronizacion/reparto/avisos?${q}`, {
+          headers: cabeceras(),
+        });
         const data = await res.json();
 
-        if (!res.ok) throw new Error(data.error || "No se pudieron leer los avisos");
-        setAvisos((previos) => (antes ? [...previos, ...data.avisos] : data.avisos));
+        if (!res.ok)
+          throw new Error(data.error || "No se pudieron leer los avisos");
+        setAvisos((previos) =>
+          antes ? [...previos, ...data.avisos] : data.avisos,
+        );
         setSiguiente(data.siguiente);
       } catch (e) {
         addToast({
@@ -193,7 +240,9 @@ export const RepartoSyncPanel = () => {
   const cambiarInterruptor = async (activo: boolean) => {
     setGuardando(true);
     // Se pinta ya: si el servidor dice que no, se deshace al recargar.
-    setEstado((e) => (e ? { ...e, enviar: { ...e.enviar, encendido: activo } } : e));
+    setEstado((e) =>
+      e ? { ...e, enviar: { ...e.enviar, encendido: activo } } : e,
+    );
     try {
       const res = await fetch(`${base}/sincronizacion/reparto`, {
         method: "PUT",
@@ -236,7 +285,12 @@ export const RepartoSyncPanel = () => {
       const res = await fetch(`${base}/mantenimiento/webhook/reparto`, {
         method: "PUT",
         headers: { ...cabeceras(), "content-type": "application/json" },
-        body: JSON.stringify({ url: form.url, key: form.key, secret: form.secret, activo: true }),
+        body: JSON.stringify({
+          url: form.url,
+          key: form.key,
+          secret: form.secret,
+          activo: true,
+        }),
       });
       const data = await res.json();
 
@@ -270,7 +324,8 @@ export const RepartoSyncPanel = () => {
       setSecretNuevo(data.secret);
       addToast({
         title: "Secret nuevo",
-        description: "Cópialo ahora: no se vuelve a mostrar, y hasta que el reparto lo tenga, lo que salga no le cuadra.",
+        description:
+          "Cópialo ahora: no se vuelve a mostrar, y hasta que el reparto lo tenga, lo que salga no le cuadra.",
         color: "warning",
       });
       void cargar();
@@ -331,24 +386,25 @@ export const RepartoSyncPanel = () => {
       // reparto no va a ver nunca, y eso no puede quedar debajo de un «funcionando».
       { color: "danger" as const, texto: "Se perdieron avisos" }
     : !enviar.encendido
-    ? { color: "default" as const, texto: "Apagado" }
-    : !enviar.redis
-      ? { color: "danger" as const, texto: "Sin Redis" }
-      : !enviar.grupoCreado
-        ? { color: "warning" as const, texto: "Nadie está leyendo" }
-        : /*
-           * Atascado se mide por la EDAD del más viejo sin terminar, no por cuántos hay.
-           *
-           * «40 cogidos y sin reconocer» se ve igual si entraron hace dos segundos —se
-           * están trabajando— que si llevan ahí desde anoche, que es un consumidor
-           * muerto. Diez minutos es de sobra: el reparto los coge y los reconoce en
-           * cuanto guarda.
-           */
-          enviar.masViejoSinTerminar != null && Date.now() - enviar.masViejoSinTerminar > 600_000
-          ? { color: "warning" as const, texto: "Atascado" }
-          : (enviar.sinTerminar ?? 0) > 50
-            ? { color: "warning" as const, texto: "Se está acumulando" }
-            : { color: "success" as const, texto: "Funcionando" };
+      ? { color: "default" as const, texto: "Apagado" }
+      : !enviar.redis
+        ? { color: "danger" as const, texto: "Sin Redis" }
+        : !enviar.grupoCreado
+          ? { color: "warning" as const, texto: "Nadie está leyendo" }
+          : /*
+             * Atascado se mide por la EDAD del más viejo sin terminar, no por cuántos hay.
+             *
+             * «40 cogidos y sin reconocer» se ve igual si entraron hace dos segundos —se
+             * están trabajando— que si llevan ahí desde anoche, que es un consumidor
+             * muerto. Diez minutos es de sobra: el reparto los coge y los reconoce en
+             * cuanto guarda.
+             */
+            enviar.masViejoSinTerminar != null &&
+              Date.now() - enviar.masViejoSinTerminar > 600_000
+            ? { color: "warning" as const, texto: "Atascado" }
+            : (enviar.sinTerminar ?? 0) > 50
+              ? { color: "warning" as const, texto: "Se está acumulando" }
+              : { color: "success" as const, texto: "Funcionando" };
 
   const dato = (v: number | null) => (v == null ? "—" : String(v));
 
@@ -368,22 +424,38 @@ export const RepartoSyncPanel = () => {
           </Switch>
         </div>
         <p className="mb-3 text-sm text-default-500">
-          El interruptor está aquí y no en un .env porque cambiarlo desde una pantalla es
-          un minuto y desde el .env es un despliegue. Apagado, PEDIDO deja de avisar y
-          esos cambios <span className="font-medium">no se recuperan</span> al volver a
-          encenderlo: el reparto los verá en su siguiente repaso de los días atrás.
+          El interruptor está aquí y no en un .env porque cambiarlo desde una
+          pantalla es un minuto y desde el .env es un despliegue. Apagado,
+          PEDIDO deja de avisar y esos cambios{" "}
+          <span className="font-medium">no se recuperan</span> al volver a
+          encenderlo: el reparto los verá en su siguiente repaso de los días
+          atrás.
         </p>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="min-w-0">
-            <p className="mb-1 text-sm font-medium">Cola de salida (la que lee el reparto)</p>
-            <Snippet hideSymbol className="max-w-full" size="sm" variant="bordered">
+            <p className="mb-1 text-sm font-medium">
+              Cola de salida (la que lee el reparto)
+            </p>
+            <Snippet
+              hideSymbol
+              className="max-w-full"
+              size="sm"
+              variant="bordered"
+            >
               <span className="break-all">{enviar.stream}</span>
             </Snippet>
           </div>
           <div className="min-w-0">
-            <p className="mb-1 text-sm font-medium">Entrada de vuelta (la que llama el reparto)</p>
-            <Snippet hideSymbol className="max-w-full" size="sm" variant="bordered">
+            <p className="mb-1 text-sm font-medium">
+              Entrada de vuelta (la que llama el reparto)
+            </p>
+            <Snippet
+              hideSymbol
+              className="max-w-full"
+              size="sm"
+              variant="bordered"
+            >
               <span className="break-all">{recibir.por}</span>
             </Snippet>
           </div>
@@ -397,7 +469,8 @@ export const RepartoSyncPanel = () => {
             Por defecto: {enviar.porDefecto ? "encendido" : "apagado"}
           </Chip>
           <span className="text-[11px] text-default-400">
-            Mientras nadie toque el interruptor, manda el valor por defecto del entorno.
+            Mientras nadie toque el interruptor, manda el valor por defecto del
+            entorno.
           </span>
         </div>
       </div>
@@ -414,12 +487,14 @@ export const RepartoSyncPanel = () => {
         </div>
         <p className="mb-3 text-sm text-default-500">
           Por aquí se le manda al reparto todo lo que necesita:{" "}
-          <span className="font-medium">el pedido entero dentro del aviso</span> —cliente
-          con coordenadas, vendedor y líneas con sus pesos ya resueltos— para que no tenga
-          que volver a preguntar nada. Sale firmado y con reintentos.
+          <span className="font-medium">el pedido entero dentro del aviso</span>{" "}
+          —cliente con coordenadas, vendedor y líneas con sus pesos ya
+          resueltos— para que no tenga que volver a preguntar nada. Sale firmado
+          y con reintentos.
           <span className="mt-1 block">
-            La misma <span className="font-medium">key y secret</span> valen para los dos
-            sentidos: con ellas se firma lo que sale y se comprueba lo que entra.{" "}
+            La misma <span className="font-medium">key y secret</span> valen
+            para los dos sentidos: con ellas se firma lo que sale y se comprueba
+            lo que entra.{" "}
             <span className="font-medium">Sin URL no sale ni un POST.</span>
           </span>
         </p>
@@ -451,7 +526,11 @@ export const RepartoSyncPanel = () => {
           <Input
             className="min-w-0 flex-1"
             label="Secret (el mismo en los dos lados)"
-            placeholder={enviar.webhook.tieneSecret ? "•••• (sin cambios)" : "pega uno o genéralo"}
+            placeholder={
+              enviar.webhook.tieneSecret
+                ? "•••• (sin cambios)"
+                : "pega uno o genéralo"
+            }
             size="sm"
             type="password"
             value={form.secret}
@@ -461,7 +540,12 @@ export const RepartoSyncPanel = () => {
             }}
           />
           <div className="flex flex-wrap gap-2">
-            <Button isLoading={ocupado === "secret"} size="sm" variant="bordered" onPress={() => void generarSecret()}>
+            <Button
+              isLoading={ocupado === "secret"}
+              size="sm"
+              variant="bordered"
+              onPress={() => void generarSecret()}
+            >
               Generar
             </Button>
             <Button
@@ -473,7 +557,12 @@ export const RepartoSyncPanel = () => {
             >
               Probar
             </Button>
-            <Button color="primary" isLoading={ocupado === "guardar"} size="sm" onPress={() => void guardar()}>
+            <Button
+              color="primary"
+              isLoading={ocupado === "guardar"}
+              size="sm"
+              onPress={() => void guardar()}
+            >
               Guardar
             </Button>
           </div>
@@ -482,17 +571,26 @@ export const RepartoSyncPanel = () => {
         {secretNuevo && (
           <div className="mb-3 rounded-lg border border-warning-200 bg-warning-50 p-3">
             <p className="mb-2 text-sm font-medium">
-              Cópialo y pásaselo al del reparto. No se vuelve a mostrar, y hasta que lo
-              tenga, lo que salga no le va a cuadrar.
+              Cópialo y pásaselo al del reparto. No se vuelve a mostrar, y hasta
+              que lo tenga, lo que salga no le va a cuadrar.
             </p>
-            <Snippet hideSymbol className="max-w-full" size="sm" variant="bordered">
+            <Snippet
+              hideSymbol
+              className="max-w-full"
+              size="sm"
+              variant="bordered"
+            >
               <span className="break-all">{secretNuevo}</span>
             </Snippet>
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Chip color={enviar.webhook.url ? "success" : "default"} size="sm" variant="flat">
+          <Chip
+            color={enviar.webhook.url ? "success" : "default"}
+            size="sm"
+            variant="flat"
+          >
             {enviar.webhook.url
               ? enviar.webhook.tieneSecret
                 ? "Configurado"
@@ -519,7 +617,8 @@ export const RepartoSyncPanel = () => {
             <div>
               <p className="text-base font-semibold">Enviar al reparto</p>
               <p className="text-xs text-default-500">
-                PEDIDO deja un aviso en cuanto un pedido se puede repartir. El reparto lo lee.
+                PEDIDO deja un aviso en cuanto un pedido se puede repartir. El
+                reparto lo lee.
               </p>
             </div>
             <Chip color={salud.color} size="sm" variant="flat">
@@ -529,32 +628,55 @@ export const RepartoSyncPanel = () => {
           <CardBody className="gap-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div>
-                <p className="text-[11px] uppercase tracking-wide text-default-400">Esperando</p>
-                <p className="text-2xl font-bold tabular-nums">{dato(enviar.hay)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-default-400">Sin terminar</p>
-                <p className="text-2xl font-bold tabular-nums">{dato(enviar.sinTerminar)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-default-400">El más viejo</p>
-                <p className="text-sm font-semibold">
-                  {enviar.masViejoSinTerminar ? hace(enviar.masViejoSinTerminar) : "—"}
+                <p className="text-[11px] uppercase tracking-wide text-default-400">
+                  Esperando
+                </p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {dato(enviar.hay)}
                 </p>
               </div>
               <div>
-                <p className="text-[11px] uppercase tracking-wide text-default-400">Último aviso</p>
-                <p className="text-sm font-semibold">{hace(enviar.ultimoAviso)}</p>
+                <p className="text-[11px] uppercase tracking-wide text-default-400">
+                  Sin terminar
+                </p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {dato(enviar.sinTerminar)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-default-400">
+                  El más viejo
+                </p>
+                <p className="text-sm font-semibold">
+                  {enviar.masViejoSinTerminar
+                    ? hace(enviar.masViejoSinTerminar)
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-default-400">
+                  Último aviso
+                </p>
+                <p className="text-sm font-semibold">
+                  {hace(enviar.ultimoAviso)}
+                </p>
               </div>
             </div>
 
             <div className="rounded-medium bg-default-100 p-3">
-              <p className="text-xs font-semibold text-default-600">{enviar.regla}</p>
-              <p className="mb-2 mt-2 text-xs font-semibold text-default-600">Se avisa cuando…</p>
+              <p className="text-xs font-semibold text-default-600">
+                {enviar.regla}
+              </p>
+              <p className="mb-2 mt-2 text-xs font-semibold text-default-600">
+                Se avisa cuando…
+              </p>
               <ul className="flex flex-col gap-1">
                 {enviar.motivos.map((m) => (
                   <li key={m.motivo} className="text-xs text-default-600">
-                    <span className="font-mono text-[11px] text-primary">{m.motivo}</span> — {m.que}
+                    <span className="font-mono text-[11px] text-primary">
+                      {m.motivo}
+                    </span>{" "}
+                    — {m.que}
                   </li>
                 ))}
               </ul>
@@ -562,17 +684,19 @@ export const RepartoSyncPanel = () => {
 
             {enviar.tiradosSinLeer && (
               <p className="rounded-medium bg-danger-50 p-3 text-xs text-danger">
-                La cola llegó a su tope y borró avisos que el reparto <b>no había leído</b>.
-                Esos pedidos no le van a llegar por aquí: los recogerá su repaso de los
-                días atrás, que va cada tres horas. Pasa si el reparto estuvo caído mucho
-                tiempo; si se repite, hay que subir <span className="font-mono">DELIVERY_STREAM_MAXLEN</span>.
+                La cola llegó a su tope y borró avisos que el reparto{" "}
+                <b>no había leído</b>. Esos pedidos no le van a llegar por aquí:
+                los recogerá su repaso de los días atrás, que va cada tres
+                horas. Pasa si el reparto estuvo caído mucho tiempo; si se
+                repite, hay que subir{" "}
+                <span className="font-mono">DELIVERY_STREAM_MAXLEN</span>.
               </p>
             )}
 
             {!enviar.grupoCreado && enviar.encendido && (
               <p className="text-[11px] text-warning">
-                El reparto todavía no ha creado su grupo de lectura: los avisos se acumulan
-                esperándolo.
+                El reparto todavía no ha creado su grupo de lectura: los avisos
+                se acumulan esperándolo.
               </p>
             )}
           </CardBody>
@@ -584,22 +708,35 @@ export const RepartoSyncPanel = () => {
             <div>
               <p className="text-base font-semibold">Recibir del reparto</p>
               <p className="text-xs text-default-500">
-                El reparto escribe aquí en qué va cada entrega: despachado, en tránsito, entregado…
+                El reparto escribe aquí en qué va cada entrega: despachado, en
+                tránsito, entregado…
               </p>
             </div>
-            <Chip color={recibir.recibidosHoy > 0 ? "success" : "default"} size="sm" variant="flat">
+            <Chip
+              color={recibir.recibidosHoy > 0 ? "success" : "default"}
+              size="sm"
+              variant="flat"
+            >
               {recibir.recibidosHoy > 0 ? "Funcionando" : "Sin movimiento hoy"}
             </Chip>
           </CardHeader>
           <CardBody className="gap-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="text-[11px] uppercase tracking-wide text-default-400">Estados hoy</p>
-                <p className="text-2xl font-bold tabular-nums">{recibir.recibidosHoy}</p>
+                <p className="text-[11px] uppercase tracking-wide text-default-400">
+                  Estados hoy
+                </p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {recibir.recibidosHoy}
+                </p>
               </div>
               <div>
-                <p className="text-[11px] uppercase tracking-wide text-default-400">El último</p>
-                <p className="text-sm font-semibold">{cuando(recibir.ultimo?.cuando)}</p>
+                <p className="text-[11px] uppercase tracking-wide text-default-400">
+                  El último
+                </p>
+                <p className="text-sm font-semibold">
+                  {cuando(recibir.ultimo?.cuando)}
+                </p>
               </div>
             </div>
 
@@ -607,47 +744,66 @@ export const RepartoSyncPanel = () => {
               <div className="rounded-medium bg-default-100 p-3 text-xs">
                 <p className="font-mono text-primary">{recibir.ultimo.folio}</p>
                 <p className="text-default-600">
-                  {recibir.ultimo.estado || "sin estado"} · {recibir.ultimo.sucursalId || "sin sucursal"}
+                  {recibir.ultimo.estado || "sin estado"} ·{" "}
+                  {recibir.ultimo.sucursalId || "sin sucursal"}
                 </p>
               </div>
             )}
 
-          <div>
-            <p className="mb-1 text-xs font-medium text-default-600">Entra por</p>
-            <Snippet hideSymbol className="max-w-full" size="sm" variant="bordered">
-              <span className="break-all">{recibir.por}</span>
-            </Snippet>
-            <p className="mt-1 font-mono text-[11px] text-default-400">{recibir.formato}</p>
-          </div>
+            <div>
+              <p className="mb-1 text-xs font-medium text-default-600">
+                Entra por
+              </p>
+              <Snippet
+                hideSymbol
+                className="max-w-full"
+                size="sm"
+                variant="bordered"
+              >
+                <span className="break-all">{recibir.por}</span>
+              </Snippet>
+              <p className="mt-1 font-mono text-[11px] text-default-400">
+                {recibir.formato}
+              </p>
+            </div>
 
-          {/*
+            {/*
             La puerta del REPARTO, que es la firmada y la que se configura arriba.
 
             Aquí se enseñaba la lista de claves de servicio activas —Parranda, Visita,
             asignación de vendedores—. No pintaban nada en esta pantalla: son de otros
             proyectos y de otra puerta. Se administran en Configuración → API keys.
           */}
-          <div>
-            <p className="mb-1 text-xs font-medium text-default-600">
-              Y la puerta firmada, que es la suya
-            </p>
-            <Snippet hideSymbol className="max-w-full" size="sm" variant="bordered">
-              <span className="break-all">{recibir.firmada}</span>
-            </Snippet>
-            <p className="mt-2 text-[11px] text-default-400">
-              Se identifica con la <span className="font-medium">misma key y secret</span>{" "}
-              de arriba: la key dice quién es y la firma dice que el cuerpo es el que él
-              mandó. La de <span className="font-mono">/integration</span> abre con la
-              clave de servicio, que vale para todo <span className="font-mono">/integration</span>,
-              y por eso no sirve para una puerta que escribe en los pedidos.
-            </p>
-            {!recibir.tieneClaves && (
-              <p className="mt-1 text-[11px] text-warning">
-                Hasta que la key y el secret estén puestos, esta puerta contesta 503 y el
-                reparto tiene que seguir entrando por la de arriba.
+            <div>
+              <p className="mb-1 text-xs font-medium text-default-600">
+                Y la puerta firmada, que es la suya
               </p>
-            )}
-          </div>
+              <Snippet
+                hideSymbol
+                className="max-w-full"
+                size="sm"
+                variant="bordered"
+              >
+                <span className="break-all">{recibir.firmada}</span>
+              </Snippet>
+              <p className="mt-2 text-[11px] text-default-400">
+                Se identifica con la{" "}
+                <span className="font-medium">misma key y secret</span> de
+                arriba: la key dice quién es y la firma dice que el cuerpo es el
+                que él mandó. La de{" "}
+                <span className="font-mono">/integration</span> abre con la
+                clave de servicio, que vale para todo{" "}
+                <span className="font-mono">/integration</span>, y por eso no
+                sirve para una puerta que escribe en los pedidos.
+              </p>
+              {!recibir.tieneClaves && (
+                <p className="mt-1 text-[11px] text-warning">
+                  Hasta que la key y el secret estén puestos, esta puerta
+                  contesta 503 y el reparto tiene que seguir entrando por la de
+                  arriba.
+                </p>
+              )}
+            </div>
           </CardBody>
         </Card>
       </div>
@@ -658,8 +814,8 @@ export const RepartoSyncPanel = () => {
           <div>
             <p className="text-base font-semibold">Lo que se ha mandado</p>
             <p className="text-xs text-default-500">
-              Del más nuevo al más viejo. Aquí se ve si lo que sale es lo que tenía que
-              salir, y no sólo cuántos hay.
+              Del más nuevo al más viejo. Aquí se ve si lo que sale es lo que
+              tenía que salir, y no sólo cuántos hay.
             </p>
           </div>
           <Button
@@ -695,15 +851,27 @@ export const RepartoSyncPanel = () => {
                 <tbody>
                   {avisos.map((a) => (
                     <tr key={a._id} className="border-t border-default-100">
-                      <td className="py-2 pr-3 whitespace-nowrap text-default-500">{cuandoMs(a.ts)}</td>
+                      <td className="py-2 pr-3 whitespace-nowrap text-default-500">
+                        {cuandoMs(a.ts)}
+                      </td>
                       <td className="py-2 pr-3">
-                        <Chip color={colorMotivo(a.motivo)} size="sm" variant="flat">
+                        <Chip
+                          color={colorMotivo(a.motivo)}
+                          size="sm"
+                          variant="flat"
+                        >
                           {a.motivo || "—"}
                         </Chip>
                       </td>
-                      <td className="py-2 pr-3 font-mono text-[11px] text-primary">{a.id || "—"}</td>
-                      <td className="py-2 pr-3 text-default-600">{a.sucursalId || "—"}</td>
-                      <td className="py-2 text-default-600">{a.accion || "—"}</td>
+                      <td className="py-2 pr-3 font-mono text-[11px] text-primary">
+                        {a.id || "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-default-600">
+                        {a.sucursalId || "—"}
+                      </td>
+                      <td className="py-2 text-default-600">
+                        {a.accion || "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -713,7 +881,8 @@ export const RepartoSyncPanel = () => {
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[11px] text-default-400">
-              {avisos.length > 0 && `${avisos.length} aviso${avisos.length === 1 ? "" : "s"} a la vista`}
+              {avisos.length > 0 &&
+                `${avisos.length} aviso${avisos.length === 1 ? "" : "s"} a la vista`}
             </p>
             {siguiente && (
               <Button

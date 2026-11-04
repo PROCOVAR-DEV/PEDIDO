@@ -20,6 +20,7 @@ import Icons from "../icons/iconify";
 
 import { usePantallaChica } from "@/hooks/pantalla";
 import { getApiBaseUrl } from "@/config";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 /**
  * LO QUE SE BORRÓ Y NO VUELVE A ENTRAR SOLO.
@@ -45,10 +46,22 @@ type Borrado = {
 };
 
 const fecha = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("es", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—";
+  iso
+    ? new Date(iso).toLocaleDateString("es", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+      })
+    : "—";
 
 const cuando = (iso: string) =>
-  new Date(iso).toLocaleString("es", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleString("es", {
+    timeZone: zonaCuba(iso),
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 export const PapeleraBorrados = ({
   isOpen,
@@ -64,8 +77,12 @@ export const PapeleraBorrados = ({
   const pantallaChica = usePantallaChica();
   // Mismo contenido, distinto envase: cajón en el teléfono, modal en el escritorio.
   const Envase: ElementType = pantallaChica ? Drawer : Modal;
-  const EnvaseContenido: ElementType = pantallaChica ? DrawerContent : ModalContent;
-  const EnvaseCabecera: ElementType = pantallaChica ? DrawerHeader : ModalHeader;
+  const EnvaseContenido: ElementType = pantallaChica
+    ? DrawerContent
+    : ModalContent;
+  const EnvaseCabecera: ElementType = pantallaChica
+    ? DrawerHeader
+    : ModalHeader;
   const EnvaseCuerpo: ElementType = pantallaChica ? DrawerBody : ModalBody;
   const EnvasePie: ElementType = pantallaChica ? DrawerFooter : ModalFooter;
 
@@ -127,7 +144,9 @@ export const PapeleraBorrados = ({
   return (
     <Envase
       isOpen={isOpen}
-      {...(pantallaChica ? { placement: "right" } : { placement: "center", size: "3xl", scrollBehavior: "inside" })}
+      {...(pantallaChica
+        ? { placement: "right" }
+        : { placement: "center", size: "3xl", scrollBehavior: "inside" })}
       onClose={onClose}
     >
       <EnvaseContenido>
@@ -137,8 +156,9 @@ export const PapeleraBorrados = ({
             Pedidos borrados
           </span>
           <span className="text-xs font-normal text-default-500">
-            Estos no vuelven a entrar aunque se suba otra vez el archivo. Si fue un error,
-            quita la nota y volverán en la próxima importación, con su mismo folio.
+            Estos no vuelven a entrar aunque se suba otra vez el archivo. Si fue
+            un error, quita la nota y volverán en la próxima importación, con su
+            mismo folio.
           </span>
         </EnvaseCabecera>
 
@@ -149,8 +169,8 @@ export const PapeleraBorrados = ({
             </div>
           ) : borrados.length === 0 ? (
             <p className="py-8 text-center text-sm text-default-500">
-              No hay ningún pedido borrado. Lo que se borre desde aquí aparecerá en esta
-              lista.
+              No hay ningún pedido borrado. Lo que se borre desde aquí aparecerá
+              en esta lista.
             </p>
           ) : (
             <div className="flex flex-col gap-2">
@@ -176,10 +196,12 @@ export const PapeleraBorrados = ({
                       )}
                     </div>
                     <p className="text-sm text-default-600 truncate">
-                      {b.clienteNombre || "Sin cliente"} · {b.vendedorNombre || "Sin vendedor"}
+                      {b.clienteNombre || "Sin cliente"} ·{" "}
+                      {b.vendedorNombre || "Sin vendedor"}
                     </p>
                     <p className="text-xs text-default-400">
-                      Del {fecha(b.fecha)} · lo borró {b.borradoPor || "alguien"} el {cuando(b.createdAt)}
+                      Del {fecha(b.fecha)} · lo borró{" "}
+                      {b.borradoPor || "alguien"} el {cuando(b.createdAt)}
                     </p>
                   </div>
                   <Button

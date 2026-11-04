@@ -1,7 +1,17 @@
-import { Card, CardBody, Chip, Input, Pagination, Select, SelectItem, Spinner } from "@heroui/react";
+import {
+  Card,
+  CardBody,
+  Chip,
+  Input,
+  Pagination,
+  Select,
+  SelectItem,
+  Spinner,
+} from "@heroui/react";
 import { useCallback, useEffect, useState } from "react";
 
 import { getApiBaseUrl } from "@/config";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 /**
  * La ingesta: cada archivo que n8n (o la pantalla) manda a PEDIDO, y qué pasó con él.
@@ -42,22 +52,39 @@ interface Fila {
 
 interface Respuesta {
   data: Fila[];
-  pagination: { page: number; limit: number; total: number; totalPages: number };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
   resumen: Record<Estado, number>;
 }
 
-const ESTADOS: Record<Estado, { titulo: string; color: "success" | "warning" | "danger" }> = {
+const ESTADOS: Record<
+  Estado,
+  { titulo: string; color: "success" | "warning" | "danger" }
+> = {
   entro: { titulo: "Entró", color: "success" },
   con_problemas: { titulo: "Entró con problemas", color: "warning" },
   rechazado: { titulo: "Rechazado", color: "danger" },
 };
 
 function fecha(iso: string): string {
-  return new Date(iso).toLocaleString("es", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleString("es", {
+    timeZone: zonaCuba(iso),
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function hace(iso: string): string {
-  const s = Math.max(Math.round((Date.now() - new Date(iso).getTime()) / 1000), 0);
+  const s = Math.max(
+    Math.round((Date.now() - new Date(iso).getTime()) / 1000),
+    0,
+  );
 
   if (s < 90) return `hace ${s} s`;
   if (s < 5400) return `hace ${Math.round(s / 60)} min`;
@@ -70,7 +97,9 @@ export function IngestaPanel() {
   const [datos, setDatos] = useState<Respuesta | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sucursales, setSucursales] = useState<Array<{ id: string; nombre: string; codigo: string | null }>>([]);
+  const [sucursales, setSucursales] = useState<
+    Array<{ id: string; nombre: string; codigo: string | null }>
+  >([]);
   const [estado, setEstado] = useState<Estado | "todo">("todo");
   const [sucursal, setSucursal] = useState("");
   const [busqueda, setBusqueda] = useState("");
@@ -103,7 +132,10 @@ export function IngestaPanel() {
   const cargar = useCallback(async () => {
     setCargando(true);
     try {
-      const p = new URLSearchParams({ page: String(pagina), limit: String(porPagina) });
+      const p = new URLSearchParams({
+        page: String(pagina),
+        limit: String(porPagina),
+      });
 
       if (estado !== "todo") p.set("estado", estado);
       if (sucursal) p.set("sucursalId", sucursal);
@@ -137,21 +169,55 @@ export function IngestaPanel() {
   if (!datos) return null;
 
   const { resumen, pagination: pag } = datos;
-  const tarjetas: Array<{ clave: Estado | "todo"; titulo: string; valor: number; pie: string }> = [
-    { clave: "todo", titulo: "Archivos", valor: resumen.entro + resumen.con_problemas + resumen.rechazado, pie: "con estos filtros" },
-    { clave: "entro", titulo: "Entraron", valor: resumen.entro, pie: "sin problemas" },
-    { clave: "con_problemas", titulo: "Con problemas", valor: resumen.con_problemas, pie: "alguna fila falló" },
-    { clave: "rechazado", titulo: "Rechazados", valor: resumen.rechazado, pie: "van a Errores" },
+  const tarjetas: Array<{
+    clave: Estado | "todo";
+    titulo: string;
+    valor: number;
+    pie: string;
+  }> = [
+    {
+      clave: "todo",
+      titulo: "Archivos",
+      valor: resumen.entro + resumen.con_problemas + resumen.rechazado,
+      pie: "con estos filtros",
+    },
+    {
+      clave: "entro",
+      titulo: "Entraron",
+      valor: resumen.entro,
+      pie: "sin problemas",
+    },
+    {
+      clave: "con_problemas",
+      titulo: "Con problemas",
+      valor: resumen.con_problemas,
+      pie: "alguna fila falló",
+    },
+    {
+      clave: "rechazado",
+      titulo: "Rechazados",
+      valor: resumen.rechazado,
+      pie: "van a Errores",
+    },
   ];
 
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {tarjetas.map((t) => (
-          <Card key={t.clave} isPressable className={estado === t.clave ? "ring-2 ring-primary" : ""} onPress={() => setEstado(t.clave)}>
+          <Card
+            key={t.clave}
+            isPressable
+            className={estado === t.clave ? "ring-2 ring-primary" : ""}
+            onPress={() => setEstado(t.clave)}
+          >
             <CardBody className="py-3">
-              <p className="text-xs uppercase tracking-wide text-default-500">{t.titulo}</p>
-              <p className={`text-2xl font-semibold tabular-nums ${t.clave === "rechazado" && t.valor > 0 ? "text-danger" : ""}`}>
+              <p className="text-xs uppercase tracking-wide text-default-500">
+                {t.titulo}
+              </p>
+              <p
+                className={`text-2xl font-semibold tabular-nums ${t.clave === "rechazado" && t.valor > 0 ? "text-danger" : ""}`}
+              >
                 {t.valor.toLocaleString("es")}
               </p>
               <p className="text-xs text-default-400">{t.pie}</p>
@@ -167,17 +233,23 @@ export function IngestaPanel() {
           label="Sucursal (carpeta del Drive)"
           selectedKeys={[sucursal || "todas"]}
           size="sm"
-          onChange={(e) => setSucursal(e.target.value === "todas" ? "" : e.target.value)}
+          onChange={(e) =>
+            setSucursal(e.target.value === "todas" ? "" : e.target.value)
+          }
         >
           {[
             <SelectItem key="todas">Todas</SelectItem>,
             <SelectItem key="sin">Sin sucursal</SelectItem>,
-            ...sucursales.map((s) => <SelectItem key={s.id}>{s.codigo ? `${s.codigo} · ${s.nombre}` : s.nombre}</SelectItem>),
+            ...sucursales.map((s) => (
+              <SelectItem key={s.id}>
+                {s.codigo ? `${s.codigo} · ${s.nombre}` : s.nombre}
+              </SelectItem>
+            )),
           ]}
         </Select>
         <Input
-          className="max-w-xs"
           isClearable
+          className="max-w-xs"
           label="Buscar"
           placeholder="Archivo, carpeta o motivo"
           size="sm"
@@ -185,8 +257,22 @@ export function IngestaPanel() {
           onClear={() => setBusqueda("")}
           onValueChange={setBusqueda}
         />
-        <Input className="max-w-[10rem]" label="Desde" size="sm" type="date" value={desde} onValueChange={setDesde} />
-        <Input className="max-w-[10rem]" label="Hasta" size="sm" type="date" value={hasta} onValueChange={setHasta} />
+        <Input
+          className="max-w-[10rem]"
+          label="Desde"
+          size="sm"
+          type="date"
+          value={desde}
+          onValueChange={setDesde}
+        />
+        <Input
+          className="max-w-[10rem]"
+          label="Hasta"
+          size="sm"
+          type="date"
+          value={hasta}
+          onValueChange={setHasta}
+        />
         <Select
           className="max-w-[8rem]"
           label="Por página"
@@ -199,14 +285,17 @@ export function IngestaPanel() {
           ))}
         </Select>
         <p className="ml-auto text-sm text-default-500">
-          {pag.total === 0 ? "sin resultados" : `${(pag.page - 1) * pag.limit + 1}–${Math.min(pag.page * pag.limit, pag.total)} de ${pag.total.toLocaleString("es")}`}
+          {pag.total === 0
+            ? "sin resultados"
+            : `${(pag.page - 1) * pag.limit + 1}–${Math.min(pag.page * pag.limit, pag.total)} de ${pag.total.toLocaleString("es")}`}
         </p>
       </div>
 
       {datos.data.length === 0 && (
         <Card>
           <CardBody className="py-6 text-center text-default-500">
-            No hay archivos con estos filtros. Desde el 13/10/2026 se apunta cada archivo que llega.
+            No hay archivos con estos filtros. Desde el 13/10/2026 se apunta
+            cada archivo que llega.
           </CardBody>
         </Card>
       )}
@@ -216,32 +305,63 @@ export function IngestaPanel() {
           const e = ESTADOS[f.estado] ?? ESTADOS.entro;
 
           return (
-            <Card key={f.id} className={f.estado === "rechazado" ? "border-medium border-danger-200" : ""}>
+            <Card
+              key={f.id}
+              className={
+                f.estado === "rechazado"
+                  ? "border-medium border-danger-200"
+                  : ""
+              }
+            >
               <CardBody className="gap-1 py-3">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <Chip color={e.color} size="sm" variant="flat">
                     {e.titulo}
                   </Chip>
-                  <span className="min-w-0 break-all text-sm font-medium">{f.archivo ?? "archivo sin nombre"}</span>
-                  <span className="ml-auto text-xs text-default-500" title={fecha(f.createdAt)}>
+                  <span className="min-w-0 break-all text-sm font-medium">
+                    {f.archivo ?? "archivo sin nombre"}
+                  </span>
+                  <span
+                    className="ml-auto text-xs text-default-500"
+                    title={fecha(f.createdAt)}
+                  >
                     {fecha(f.createdAt)} · {hace(f.createdAt)}
                   </span>
                 </div>
-                {f.motivo && f.estado === "rechazado" && <p className="text-sm text-danger-700">{f.motivo}</p>}
-                {f.motivo && f.estado === "con_problemas" && <p className="text-sm text-warning-700">{f.motivo}</p>}
+                {f.motivo && f.estado === "rechazado" && (
+                  <p className="text-sm text-danger-700">{f.motivo}</p>
+                )}
+                {f.motivo && f.estado === "con_problemas" && (
+                  <p className="text-sm text-warning-700">{f.motivo}</p>
+                )}
                 <p className="text-xs text-default-500">
                   <strong>{f.sucursal ?? "Sin sucursal"}</strong>
                   {f.fuente && <> · carpeta/flujo: {f.fuente}</>}
-                  {f.origen === "pantalla" && <> · subido a mano</>} · {f.filas.toLocaleString("es")} {f.filas === 1 ? "fila" : "filas"}
+                  {f.origen === "pantalla" && <> · subido a mano</>} ·{" "}
+                  {f.filas.toLocaleString("es")}{" "}
+                  {f.filas === 1 ? "fila" : "filas"}
                   {f.estado !== "rechazado" && (
                     <>
                       {" "}
-                      · {f.creados + f.actualizados} {f.creados + f.actualizados === 1 ? "pedido" : "pedidos"}
-                      {f.omitidos > 0 && <> · {f.omitidos} borrados, no entraron</>}
-                      {(f.congelados ?? 0) > 0 && <> · {f.congelados} ya completados, sin cambios</>}
+                      · {f.creados + f.actualizados}{" "}
+                      {f.creados + f.actualizados === 1 ? "pedido" : "pedidos"}
+                      {f.omitidos > 0 && (
+                        <> · {f.omitidos} borrados, no entraron</>
+                      )}
+                      {(f.congelados ?? 0) > 0 && (
+                        <> · {f.congelados} ya completados, sin cambios</>
+                      )}
                     </>
                   )}
-                  {f.ms != null && <> · {f.ms < 1000 ? `${f.ms} ms` : `${(f.ms / 1000).toFixed(1).replace(".", ",")} s`}</>}
+                  {f.ms != null && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      {f.ms < 1000
+                        ? `${f.ms} ms`
+                        : `${(f.ms / 1000).toFixed(1).replace(".", ",")} s`}
+                    </>
+                  )}
                 </p>
               </CardBody>
             </Card>
@@ -251,7 +371,12 @@ export function IngestaPanel() {
 
       {pag.totalPages > 1 && (
         <div className="flex justify-center">
-          <Pagination showControls page={pag.page} total={pag.totalPages} onChange={setPagina} />
+          <Pagination
+            showControls
+            page={pag.page}
+            total={pag.totalPages}
+            onChange={setPagina}
+          />
         </div>
       )}
     </div>

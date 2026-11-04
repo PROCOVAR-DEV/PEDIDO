@@ -29,6 +29,7 @@ import { cards } from "../primitives";
 
 import { getApiBaseUrl } from "@/config";
 import { useCerrarAlPulsarFuera } from "@/hooks/cerrar-al-pulsar-fuera";
+import { zonaCuba } from "@/lib/zona-cuba";
 
 /**
  * Panel de Clientes (Parranda) — solo Super Admin.
@@ -81,7 +82,11 @@ interface SyncRun {
     cambios?: Array<{
       cliente: string;
       sucursal: string | null;
-      campos: Array<{ campo: string; antes: string | null; despues: string | null }>;
+      campos: Array<{
+        campo: string;
+        antes: string | null;
+        despues: string | null;
+      }>;
     }>;
   };
   error?: string;
@@ -112,7 +117,10 @@ const api = getApiBaseUrl;
 const fmtFecha = (v: number | string | null | undefined) => {
   if (!v) return "—";
   const d = new Date(v);
-  return isNaN(d.getTime()) ? "—" : d.toLocaleString("es", { dateStyle: "short", timeStyle: "short" });
+
+  return isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleString("es", { dateStyle: "short", timeStyle: "short" });
 };
 
 export const ClientesParrandaPanel = () => {
@@ -138,13 +146,20 @@ export const ClientesParrandaPanel = () => {
   const [soloGeo, setSoloGeo] = useState(false);
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
-  const [lista, setLista] = useState<{ data: ClienteRow[]; total: number; pages: number } | null>(null);
+  const [lista, setLista] = useState<{
+    data: ClienteRow[];
+    total: number;
+    pages: number;
+  } | null>(null);
   const [cargandoLista, setCargandoLista] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cargarResumen = useCallback(async () => {
     try {
-      const r = await fetch(`${api()}/clientes/resumen-parranda`).then((x) => x.json());
+      const r = await fetch(`${api()}/clientes/resumen-parranda`).then((x) =>
+        x.json(),
+      );
+
       if (!r.error) setResumen(r);
     } catch {
       /* reintenta al recargar */
@@ -155,6 +170,7 @@ export const ClientesParrandaPanel = () => {
     try {
       const url = `${api()}/clientes/municipios${sucursalId ? `?sucursalId=${sucursalId}` : ""}`;
       const r = await fetch(url).then((x) => x.json());
+
       setMunicipios(r.municipios ?? []);
     } catch {
       setMunicipios([]);
@@ -164,13 +180,20 @@ export const ClientesParrandaPanel = () => {
   const cargarLista = useCallback(async () => {
     setCargandoLista(true);
     try {
-      const p = new URLSearchParams({ page: String(page), limit: String(limit) });
+      const p = new URLSearchParams({
+        page: String(page),
+        limit: String(limit),
+      });
+
       if (sucursalId) p.set("sucursalId", sucursalId);
       if (municipio) p.set("municipio", municipio);
       if (tipo) p.set("tipo", tipo);
       if (search) p.set("search", search);
       if (soloGeo) p.set("soloGeo", "1");
-      const r = await fetch(`${api()}/clientes/parranda-lista?${p.toString()}`).then((x) => x.json());
+      const r = await fetch(
+        `${api()}/clientes/parranda-lista?${p.toString()}`,
+      ).then((x) => x.json());
+
       if (!r.error) setLista(r);
     } catch {
       /* ignore */
@@ -189,6 +212,7 @@ export const ClientesParrandaPanel = () => {
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(() => cargarLista(), 300);
+
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
@@ -201,28 +225,52 @@ export const ClientesParrandaPanel = () => {
   const sincronizar = async () => {
     setSincronizando(true);
     try {
-      const res = await fetch(`${api()}/clientes/sync-parranda`, { method: "POST" });
+      const res = await fetch(`${api()}/clientes/sync-parranda`, {
+        method: "POST",
+      });
       const j = await res.json();
+
       if (!res.ok) throw new Error(j.error || "No se pudo iniciar");
-      addToast({ title: "Sincronización iniciada", description: "El worker está trayendo los clientes de Parranda…", color: "primary" });
+      addToast({
+        title: "Sincronización iniciada",
+        description: "El worker está trayendo los clientes de Parranda…",
+        color: "primary",
+      });
       // Poll del estado hasta que termine.
       const jobId = j.jobId;
+
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 4000));
-        const s = await fetch(`${api()}/clientes/sync-parranda/status/${jobId}`).then((x) => x.json());
+        const s = await fetch(
+          `${api()}/clientes/sync-parranda/status/${jobId}`,
+        ).then((x) => x.json());
+
         if (s.estado === "completado") {
           const r = s.resultado || {};
-          addToast({ title: "Sincronización completa", description: `${r.actualizados ?? 0} cambiaron · ${r.sinCambios ?? 0} ya estaban al día · ${r.conGeo ?? 0} con geo`, color: "success" });
+
+          addToast({
+            title: "Sincronización completa",
+            description: `${r.actualizados ?? 0} cambiaron · ${r.sinCambios ?? 0} ya estaban al día · ${r.conGeo ?? 0} con geo`,
+            color: "success",
+          });
           break;
         }
         if (s.estado === "error") {
-          addToast({ title: "Falló la sincronización", description: String(s.error || "").slice(0, 120), color: "danger" });
+          addToast({
+            title: "Falló la sincronización",
+            description: String(s.error || "").slice(0, 120),
+            color: "danger",
+          });
           break;
         }
       }
       await Promise.all([cargarResumen(), cargarLista()]);
     } catch (e) {
-      addToast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo sincronizar", color: "danger" });
+      addToast({
+        title: "Error",
+        description: e instanceof Error ? e.message : "No se pudo sincronizar",
+        color: "danger",
+      });
     } finally {
       setSincronizando(false);
     }
@@ -230,194 +278,264 @@ export const ClientesParrandaPanel = () => {
 
   return (
     <>
-    <Card className={cards()}>
-      <CardBody>
-        <div className="flex flex-col gap-5">
-          {/* Encabezado + acción */}
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h3 className="text-lg font-semibold">Clientes · Parranda</h3>
-              <p className="text-sm text-default-500">
-                {/* Se dice cuándo toca la PRÓXIMA, no solo que "se hace sola".
+      <Card className={cards()}>
+        <CardBody>
+          <div className="flex flex-col gap-5">
+            {/* Encabezado + acción */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">Clientes · Parranda</h3>
+                <p className="text-sm text-default-500">
+                  {/* Se dice cuándo toca la PRÓXIMA, no solo que "se hace sola".
                     Estuvo meses prometiéndolo sin que nadie la disparara y no se
                     notó, porque no había forma de comprobarlo desde aquí. */}
-                {resumen?.proximaSync
-                  ? `Se sincroniza sola cada 3 horas, de 8:00 am a 8:00 pm. La próxima: ${new Date(resumen.proximaSync).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}. También podés correrlo a mano.`
-                  : "La sincronización automática no está programada ahora mismo. Podés correrla a mano."}
-              </p>
-            </div>
-            <Button color="primary" isLoading={sincronizando} onPress={sincronizar}>
-              {sincronizando ? "Sincronizando…" : "Sincronizar ahora"}
-            </Button>
-          </div>
-
-          {/* Resumen global + por sucursal */}
-          {resumen && (
-            <div className="flex flex-col gap-3">
-              <div className="flex gap-3 flex-wrap">
-                <Chip color="primary" variant="flat" size="lg">
-                  {resumen.granTotal.toLocaleString("es")} clientes
-                </Chip>
-                <Chip color="success" variant="flat" size="lg">
-                  {resumen.granConGeo.toLocaleString("es")} con geolocalización
-                </Chip>
+                  {resumen?.proximaSync
+                    ? `Se sincroniza sola cada 3 horas, de 8:00 am a 8:00 pm. La próxima: ${new Date(resumen.proximaSync).toLocaleString("es-ES", { timeZone: zonaCuba(resumen.proximaSync), day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}. También podés correrlo a mano.`
+                    : "La sincronización automática no está programada ahora mismo. Podés correrla a mano."}
+                </p>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                {resumen.porSucursal.map((s) => (
-                  <Chip key={s.id} variant="bordered" className="h-auto py-1">
-                    <span className="font-semibold">{s.codigo || s.nombre}</span>{" "}
-                    <span className="text-default-500">{s.total.toLocaleString("es")}</span>{" "}
-                    <span className="text-success">({s.conGeo.toLocaleString("es")} geo)</span>
+              <Button
+                color="primary"
+                isLoading={sincronizando}
+                onPress={sincronizar}
+              >
+                {sincronizando ? "Sincronizando…" : "Sincronizar ahora"}
+              </Button>
+            </div>
+
+            {/* Resumen global + por sucursal */}
+            {resumen && (
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-3 flex-wrap">
+                  <Chip color="primary" size="lg" variant="flat">
+                    {resumen.granTotal.toLocaleString("es")} clientes
                   </Chip>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Historial de sincronizaciones del worker */}
-          {resumen && resumen.syncs.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-1">Últimas sincronizaciones</p>
-              <div className="flex flex-col gap-1 max-h-80 overflow-auto rounded-md border border-default-200 p-2">
-                {resumen.syncs.map((s) => (
-                  // La fila ENTERA abre el detalle. Un enlace pequeño al final se lo
-                  // salta cualquiera —de hecho se lo saltó—; una fila que se pulsa se
-                  // encuentra sola.
-                  <button
-                    key={s.jobId}
-                    type="button"
-                    className="flex flex-col gap-1 text-xs text-left rounded px-1 py-0.5 hover:bg-default-100"
-                    onClick={() => {
-                      setSyncVisto(s);
-                      onDetalleOpen();
-                    }}
-                  >
-                   <div className="flex items-center gap-2 w-full">
-                    <Chip
-                      size="sm"
-                      color={s.estado === "completado" ? "success" : s.estado === "error" ? "danger" : "warning"}
-                      variant="flat"
-                    >
-                      {s.estado}
+                  <Chip color="success" size="lg" variant="flat">
+                    {resumen.granConGeo.toLocaleString("es")} con
+                    geolocalización
+                  </Chip>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {resumen.porSucursal.map((s) => (
+                    <Chip key={s.id} className="h-auto py-1" variant="bordered">
+                      <span className="font-semibold">
+                        {s.codigo || s.nombre}
+                      </span>{" "}
+                      <span className="text-default-500">
+                        {s.total.toLocaleString("es")}
+                      </span>{" "}
+                      <span className="text-success">
+                        ({s.conGeo.toLocaleString("es")} geo)
+                      </span>
                     </Chip>
-                    <span className="text-default-500">{fmtFecha(s.cuando)}</span>
-                    {s.resultado && (
-                      <span>
-                        {/* "cambiaron" es lo que de verdad se escribió. Antes
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Historial de sincronizaciones del worker */}
+            {resumen && resumen.syncs.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-1">
+                  Últimas sincronizaciones
+                </p>
+                <div className="flex flex-col gap-1 max-h-80 overflow-auto rounded-md border border-default-200 p-2">
+                  {resumen.syncs.map((s) => (
+                    // La fila ENTERA abre el detalle. Un enlace pequeño al final se lo
+                    // salta cualquiera —de hecho se lo saltó—; una fila que se pulsa se
+                    // encuentra sola.
+                    <button
+                      key={s.jobId}
+                      className="flex flex-col gap-1 text-xs text-left rounded px-1 py-0.5 hover:bg-default-100"
+                      type="button"
+                      onClick={() => {
+                        setSyncVisto(s);
+                        onDetalleOpen();
+                      }}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <Chip
+                          color={
+                            s.estado === "completado"
+                              ? "success"
+                              : s.estado === "error"
+                                ? "danger"
+                                : "warning"
+                          }
+                          size="sm"
+                          variant="flat"
+                        >
+                          {s.estado}
+                        </Chip>
+                        <span className="text-default-500">
+                          {fmtFecha(s.cuando)}
+                        </span>
+                        {s.resultado && (
+                          <span>
+                            {/* "cambiaron" es lo que de verdad se escribió. Antes
                             decía "act" y contaba TODOS los encontrados, así que
                             marcaba 6127 en cada pasada aunque no hubiera
                             cambiado un solo dato. */}
-                        {s.resultado.actualizados} cambiaron
-                        {s.resultado.sinCambios != null
-                          ? ` · ${s.resultado.sinCambios} ya estaban al día`
-                          : ""}
-                        {s.resultado.repetidas ? ` · ${s.resultado.repetidas} repetidas en Parranda` : ""}
-                        {" · "}
-                        {s.resultado.conGeo} geo · {s.resultado.errores} err
-                        {s.resultado.desactivados ? ` · ${s.resultado.desactivados} pasaron a inactivos` : ""}
-                        {s.resultado.reactivados ? ` · ${s.resultado.reactivados} reactivados` : ""}
-                      </span>
-                    )}
-                    {s.error && <span className="text-danger truncate">{s.error}</span>}
-                    <span className="ml-auto underline text-primary shrink-0">
-                      ver qué cambió
-                    </span>
-                   </div>
+                            {s.resultado.actualizados} cambiaron
+                            {s.resultado.sinCambios != null
+                              ? ` · ${s.resultado.sinCambios} ya estaban al día`
+                              : ""}
+                            {s.resultado.repetidas
+                              ? ` · ${s.resultado.repetidas} repetidas en Parranda`
+                              : ""}
+                            {" · "}
+                            {s.resultado.conGeo} geo · {s.resultado.errores} err
+                            {s.resultado.desactivados
+                              ? ` · ${s.resultado.desactivados} pasaron a inactivos`
+                              : ""}
+                            {s.resultado.reactivados
+                              ? ` · ${s.resultado.reactivados} reactivados`
+                              : ""}
+                          </span>
+                        )}
+                        {s.error && (
+                          <span className="text-danger truncate">
+                            {s.error}
+                          </span>
+                        )}
+                        <span className="ml-auto underline text-primary shrink-0">
+                          ver qué cambió
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                  </button>
-                ))}
+            {/* Filtros */}
+            <div className="flex gap-2 flex-wrap items-end">
+              <Select
+                className="w-44"
+                label="Sucursal"
+                selectedKeys={sucursalId ? [sucursalId] : []}
+                size="sm"
+                onChange={(e) => setSucursalId(e.target.value)}
+              >
+                {[
+                  <SelectItem key="">Todas</SelectItem>,
+                  ...(resumen?.porSucursal ?? []).map((s) => (
+                    <SelectItem key={s.id}>{s.nombre}</SelectItem>
+                  )),
+                ]}
+              </Select>
+              <Select
+                className="w-44"
+                label="Municipio"
+                selectedKeys={municipio ? [municipio] : []}
+                size="sm"
+                onChange={(e) => setMunicipio(e.target.value)}
+              >
+                {[
+                  <SelectItem key="">Todos</SelectItem>,
+                  ...municipios.map((m) => (
+                    <SelectItem key={m}>{m}</SelectItem>
+                  )),
+                ]}
+              </Select>
+              <Input
+                className="w-36"
+                label="Tipo"
+                placeholder="Kiosko…"
+                size="sm"
+                value={tipo}
+                onValueChange={setTipo}
+              />
+              <Input
+                className="w-56"
+                label="Buscar cliente"
+                placeholder="Nombre…"
+                size="sm"
+                value={search}
+                onValueChange={setSearch}
+              />
+              <div className="flex items-center gap-2 pb-1">
+                <Switch
+                  isSelected={soloGeo}
+                  size="sm"
+                  onValueChange={setSoloGeo}
+                >
+                  Solo con geo
+                </Switch>
               </div>
             </div>
-          )}
 
-          {/* Filtros */}
-          <div className="flex gap-2 flex-wrap items-end">
-            <Select
-              label="Sucursal"
-              size="sm"
-              className="w-44"
-              selectedKeys={sucursalId ? [sucursalId] : []}
-              onChange={(e) => setSucursalId(e.target.value)}
+            {/* Tabla paginada */}
+            <Table
+              aria-label="Clientes de Parranda"
+              bottomContent={
+                lista && lista.pages > 1 ? (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-default-500">
+                      {lista.total.toLocaleString("es")} clientes
+                    </span>
+                    <Pagination
+                      showControls
+                      page={page}
+                      size="sm"
+                      total={lista.pages}
+                      onChange={setPage}
+                    />
+                  </div>
+                ) : (
+                  <span className="text-xs text-default-500">
+                    {lista?.total?.toLocaleString("es") ?? 0} clientes
+                  </span>
+                )
+              }
             >
-              {[
-                <SelectItem key="">Todas</SelectItem>,
-                ...(resumen?.porSucursal ?? []).map((s) => (
-                  <SelectItem key={s.id}>{s.nombre}</SelectItem>
-                )),
-              ]}
-            </Select>
-            <Select
-              label="Municipio"
-              size="sm"
-              className="w-44"
-              selectedKeys={municipio ? [municipio] : []}
-              onChange={(e) => setMunicipio(e.target.value)}
-            >
-              {[
-                <SelectItem key="">Todos</SelectItem>,
-                ...municipios.map((m) => <SelectItem key={m}>{m}</SelectItem>),
-              ]}
-            </Select>
-            <Input label="Tipo" size="sm" className="w-36" value={tipo} onValueChange={setTipo} placeholder="Kiosko…" />
-            <Input label="Buscar cliente" size="sm" className="w-56" value={search} onValueChange={setSearch} placeholder="Nombre…" />
-            <div className="flex items-center gap-2 pb-1">
-              <Switch size="sm" isSelected={soloGeo} onValueChange={setSoloGeo}>
-                Solo con geo
-              </Switch>
-            </div>
+              <TableHeader>
+                <TableColumn>CLIENTE</TableColumn>
+                <TableColumn>SUCURSAL</TableColumn>
+                <TableColumn>MUNICIPIO</TableColumn>
+                <TableColumn>TIPO</TableColumn>
+                <TableColumn>GEO</TableColumn>
+                <TableColumn>CÓDIGO</TableColumn>
+                <TableColumn>FECHA</TableColumn>
+              </TableHeader>
+              <TableBody
+                emptyContent="Sin clientes para estos filtros"
+                isLoading={cargandoLista}
+                items={lista?.data ?? []}
+                loadingContent={<Spinner label="Cargando…" />}
+              >
+                {(c: ClienteRow) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.nombre}</TableCell>
+                    <TableCell>
+                      {c.sucursal?.codigo || c.sucursal?.nombre || "—"}
+                    </TableCell>
+                    <TableCell>{c.municipio || "—"}</TableCell>
+                    <TableCell>{c.tipoCliente || "—"}</TableCell>
+                    <TableCell>
+                      {c.latitud != null ? (
+                        <Chip color="success" size="sm" variant="flat">
+                          sí
+                        </Chip>
+                      ) : (
+                        <Chip color="default" size="sm" variant="flat">
+                          no
+                        </Chip>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-default-500">
+                      {c.codigo || "—"}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {fmtFecha(c.updatedAt)}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
-
-          {/* Tabla paginada */}
-          <Table
-            aria-label="Clientes de Parranda"
-            bottomContent={
-              lista && lista.pages > 1 ? (
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-default-500">{lista.total.toLocaleString("es")} clientes</span>
-                  <Pagination showControls size="sm" page={page} total={lista.pages} onChange={setPage} />
-                </div>
-              ) : (
-                <span className="text-xs text-default-500">{lista?.total?.toLocaleString("es") ?? 0} clientes</span>
-              )
-            }
-          >
-            <TableHeader>
-              <TableColumn>CLIENTE</TableColumn>
-              <TableColumn>SUCURSAL</TableColumn>
-              <TableColumn>MUNICIPIO</TableColumn>
-              <TableColumn>TIPO</TableColumn>
-              <TableColumn>GEO</TableColumn>
-              <TableColumn>CÓDIGO</TableColumn>
-              <TableColumn>FECHA</TableColumn>
-            </TableHeader>
-            <TableBody
-              items={lista?.data ?? []}
-              isLoading={cargandoLista}
-              loadingContent={<Spinner label="Cargando…" />}
-              emptyContent="Sin clientes para estos filtros"
-            >
-              {(c: ClienteRow) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.nombre}</TableCell>
-                  <TableCell>{c.sucursal?.codigo || c.sucursal?.nombre || "—"}</TableCell>
-                  <TableCell>{c.municipio || "—"}</TableCell>
-                  <TableCell>{c.tipoCliente || "—"}</TableCell>
-                  <TableCell>
-                    {c.latitud != null ? (
-                      <Chip size="sm" color="success" variant="flat">sí</Chip>
-                    ) : (
-                      <Chip size="sm" color="default" variant="flat">no</Chip>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs text-default-500">{c.codigo || "—"}</TableCell>
-                  <TableCell className="text-xs">{fmtFecha(c.updatedAt)}</TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </CardBody>
-    </Card>
+        </CardBody>
+      </Card>
 
       {/* Qué trajo esa sincronización. En modal y no desplegado en la lista: son
           hasta 200 líneas y dentro de una caja de cuatro filas no se lee nada. */}
@@ -482,8 +600,8 @@ export const ClientesParrandaPanel = () => {
               // Las sincronizaciones anteriores a este cambio no guardaron el
               // detalle. Decirlo es mejor que enseñar un vacío que parece un fallo.
               <p className="text-default-500">
-                Esta sincronización no guardó el detalle: es anterior al cambio que
-                empezó a registrarlo. La próxima que corras sí lo trae.
+                Esta sincronización no guardó el detalle: es anterior al cambio
+                que empezó a registrarlo. La próxima que corras sí lo trae.
               </p>
             ) : (
               <div className="flex flex-col gap-4">
@@ -492,9 +610,13 @@ export const ClientesParrandaPanel = () => {
                     todas, que es la primera pregunta que uno se hace. */}
                 {Object.entries(
                   syncVisto!.resultado!.cambios!.reduce<
-                    Record<string, NonNullable<NonNullable<SyncRun["resultado"]>["cambios"]>>
+                    Record<
+                      string,
+                      NonNullable<NonNullable<SyncRun["resultado"]>["cambios"]>
+                    >
                   >((acc, c) => {
                     const k = c.sucursal || "sin sucursal";
+
                     (acc[k] ??= []).push(c);
 
                     return acc;
@@ -507,15 +629,22 @@ export const ClientesParrandaPanel = () => {
                         {sucursal} · {lista!.length}
                       </p>
                       {lista!.map((c, i) => (
-                        <div key={`${c.cliente}-${i}`} className="border-b border-default-100 pb-1">
+                        <div
+                          key={`${c.cliente}-${i}`}
+                          className="border-b border-default-100 pb-1"
+                        >
                           <b>{c.cliente}</b>
                           <ul className="pl-4 text-xs">
                             {c.campos.map((f) => (
                               <li key={f.campo}>
                                 {f.campo}:{" "}
-                                <span className="text-default-400">{f.antes ?? "vacío"}</span>
+                                <span className="text-default-400">
+                                  {f.antes ?? "vacío"}
+                                </span>
                                 {" → "}
-                                <span className="text-success">{f.despues ?? "vacío"}</span>
+                                <span className="text-success">
+                                  {f.despues ?? "vacío"}
+                                </span>
                               </li>
                             ))}
                           </ul>
