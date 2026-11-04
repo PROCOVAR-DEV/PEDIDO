@@ -735,11 +735,15 @@ router.get('/geo-dudosos', async (req, res) => {
     const page = Math.max(1, parseInt(String(req.query.page)) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit)) || 25));
     const donde = { activo: true, ...(alcance.sucursalId ? { sucursalId: alcance.sucursalId } : {}) };
+    const q = String(req.query.search ?? '').trim();
+    const buscar = q
+      ? { OR: [{ nombre: { contains: q, mode: 'insensitive' as const } }, { codigo: { contains: q, mode: 'insensitive' as const } }] }
+      : {};
 
     const [total, filas, cuentas] = await Promise.all([
-      prisma.cliente.count({ where: { ...donde, geoEstado: { in: estados } } }),
+      prisma.cliente.count({ where: { ...donde, ...buscar, geoEstado: { in: estados } } }),
       prisma.cliente.findMany({
-        where: { ...donde, geoEstado: { in: estados } },
+        where: { ...donde, ...buscar, geoEstado: { in: estados } },
         orderBy: [{ geoDistanciaKm: { sort: 'desc', nulls: 'last' } }, { nombre: 'asc' }],
         skip: (page - 1) * limit,
         take: limit,

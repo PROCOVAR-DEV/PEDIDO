@@ -1,5 +1,7 @@
 import {
   Button,
+  Card,
+  CardBody,
   Chip,
   Input,
   Modal,
@@ -8,15 +10,9 @@ import {
   ModalFooter,
   ModalHeader,
   Pagination,
-  Select,
-  SelectItem,
   Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
+  Tab,
+  Tabs,
   addToast,
 } from "@heroui/react";
 import { useCallback, useEffect, useState } from "react";
@@ -29,6 +25,9 @@ import { getApiBaseUrl } from "@/config";
  * El punto se compara con los OTROS clientes de la misma calle (ver `api/src/lib/geoDireccion.ts`).
  * Es un aviso: el supervisor decide si el punto está bien (lo confirma, con un motivo) o lo corrige.
  * Queda apuntado quién y cuándo.
+ *
+ * Una tarjeta por cliente, con la frase que explica POR QUÉ salta el aviso y, en un clic, el mapa con
+ * el punto del cliente y el del cliente de su calle con el que se comparó: la decisión es visual.
  */
 
 interface Vecino {
@@ -49,6 +48,8 @@ interface Item {
   longitud: number;
   geoEstado: "revisar" | "no_coincide";
   geoDistanciaKm: number | null;
+  geoFuente: string | null;
+  geoAt: string | null;
   motivo: "calle" | "lejos_del_municipio";
   vecino: Vecino | null;
   sucursal: { codigo: string | null; nombre: string } | null;
@@ -61,17 +62,99 @@ interface Respuesta {
   items: Item[];
 }
 
-const mapa = (lat: number, lon: number) =>
+const MOTIVOS = [
+  "La calle es larga y el punto está bien",
+  "Confirmado con el vendedor",
+  "Confirmado con el cliente",
+  "Es una zona rural",
+];
+
+const km = (v: number) =>
+  (v < 10 ? v.toFixed(1) : Math.round(v).toString()).replace(".", ",");
+
+const abrirMapa = (lat: number, lon: number) =>
   `https://www.google.com/maps?q=${lat},${lon}`;
 
-const km = (v: number) => (v < 10 ? v.toFixed(1) : Math.round(v).toString());
+/** El mapa que se incrusta: el punto del cliente y, si hay, el del cliente de su calle (con la ruta entre los dos). */
+const mapaIncrustado = (
+  it: { latitud: number; longitud: number },
+  v?: Vecino | null,
+) =>
+  v?.latitud != null && v?.longitud != null
+    ? `https://maps.google.com/maps?saddr=${it.latitud},${it.longitud}&daddr=${v.latitud},${v.longitud}&output=embed`
+    : `https://maps.google.com/maps?q=${it.latitud},${it.longitud}&z=16&output=embed`;
+
+const fuenteDelPunto = (f: string | null, cuando: string | null) => {
+  const quien = !f
+    ? "Parranda"
+    : f === "parranda"
+      ? "Parranda"
+      : f === "apk"
+        ? "la app de entrega"
+        : f.replace("usuario:", "");
+  const fecha = cuando
+    ? new Date(cuando).toLocaleDateString("es-CU", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "";
+
+  return `Punto puesto por ${quien}${fecha ? ` el ${fecha}` : ""}`;
+};
+
+/** Saca latitud y longitud de lo que se pegue: «20.03, -75.82», o un enlace de Google Maps. */
+function leerPunto(texto: string): { lat: number; lon: number } | null {
+  const t = texto.trim();
+  const enlace =
+    t.match(/@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/) ??
+    t.match(/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/);
+  const par =
+    enlace ?? t.match(/(-?\d{1,2}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)/);
+
+  if (!par) return null;
+  const lat = Number(par[1]);
+  const lon = Number(par[2]);
+
+  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+}
+
+function Explicacion({ it }: { it: Item }) {
+  if (it.motivo === "lejos_del_municipio") {
+    return (
+      <p className="text-sm text-default-700">
+        Su punto está muy lejos del resto de los clientes de{" "}
+        {it.municipio || "su municipio"}, y en esta calle no hay otros clientes
+        con los que compararlo.
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-sm text-default-700">
+      Su punto cae a <strong>{km(it.geoDistanciaKm ?? 0)} km</strong> del
+      cliente más cercano de esta calle
+      {it.vecino ? (
+        <>
+          : {it.vecino.nombre}
+          {it.vecino.direccion ? ` (${it.vecino.direccion})` : ""}.
+        </>
+      ) : (
+        "."
+      )}
+    </p>
+  );
+}
 
 export function UbicacionesDudosas() {
   const [estado, setEstado] = useState("todos");
+  const [buscar, setBuscar] = useState("");
+  const [busqueda, setBusqueda] = useState("");
   const [page, setPage] = useState(1);
   const [datos, setDatos] = useState<Respuesta | null>(null);
   const [cargando, setCargando] = useState(true);
   const [revisando, setRevisando] = useState(false);
+  const [mapas, setMapas] = useState<Record<string, boolean>>({});
 
   const [confirmando, setConfirmando] = useState<Item | null>(null);
   const [motivo, setMotivo] = useState("");
@@ -82,8 +165,9 @@ export function UbicacionesDudosas() {
   const cargar = useCallback(async () => {
     setCargando(true);
     try {
+      const q = busqueda ? `&search=${encodeURIComponent(busqueda)}` : "";
       const r = await fetch(
-        `${getApiBaseUrl()}/clientes/geo-dudosos?estado=${estado}&page=${page}&limit=25`,
+        `${getApiBaseUrl()}/clientes/geo-dudosos?estado=${estado}&page=${page}&limit=15${q}`,
       );
       const j = await r.json();
 
@@ -98,7 +182,7 @@ export function UbicacionesDudosas() {
     } finally {
       setCargando(false);
     }
-  }, [estado, page]);
+  }, [estado, page, busqueda]);
 
   useEffect(() => {
     cargar();
@@ -106,7 +190,14 @@ export function UbicacionesDudosas() {
 
   useEffect(() => {
     setPage(1);
-  }, [estado]);
+  }, [estado, busqueda]);
+
+  // La búsqueda espera a que se deje de teclear.
+  useEffect(() => {
+    const t = setTimeout(() => setBusqueda(buscar.trim()), 350);
+
+    return () => clearTimeout(t);
+  }, [buscar]);
 
   const llamar = async (url: string, metodo: string, cuerpo: unknown) => {
     const r = await fetch(`${getApiBaseUrl()}${url}`, {
@@ -129,7 +220,7 @@ export function UbicacionesDudosas() {
 
       addToast({
         title: "Revisión hecha",
-        description: `${r.coincide ?? 0} coinciden · ${r.revisar ?? 0} por revisar · ${r.no_coincide ?? 0} no coinciden · ${r.sin_referencia ?? 0} sin referencia`,
+        description: `${r.coincide ?? 0} coinciden, ${r.revisar ?? 0} por revisar, ${r.no_coincide ?? 0} no coinciden y ${r.sin_referencia ?? 0} sin referencia.`,
         color: "success",
       });
       await cargar();
@@ -151,7 +242,11 @@ export function UbicacionesDudosas() {
       await llamar(`/clientes/${confirmando.id}/geo-confirmar`, "POST", {
         motivo,
       });
-      addToast({ title: "Ubicación confirmada", color: "success" });
+      addToast({
+        title: "Ubicación confirmada",
+        description: confirmando.nombre,
+        color: "success",
+      });
       setConfirmando(null);
       setMotivo("");
       await cargar();
@@ -166,26 +261,21 @@ export function UbicacionesDudosas() {
     }
   };
 
+  const nuevo = leerPunto(punto);
+
   const corregir = async () => {
-    if (!corrigiendo) return;
-    const [lat, lon] = punto.split(/[,;\s]+/).map(Number);
-
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      addToast({
-        title: "Escribe latitud y longitud",
-        description: "Por ejemplo: 20.03000, -75.82084",
-        color: "warning",
-      });
-
-      return;
-    }
+    if (!corrigiendo || !nuevo) return;
     setGuardando(true);
     try {
       await llamar(`/clientes/${corrigiendo.id}/geo`, "PATCH", {
-        latitud: lat,
-        longitud: lon,
+        latitud: nuevo.lat,
+        longitud: nuevo.lon,
       });
-      addToast({ title: "Ubicación corregida", color: "success" });
+      addToast({
+        title: "Ubicación corregida",
+        description: corrigiendo.nombre,
+        color: "success",
+      });
       setCorrigiendo(null);
       await cargar();
     } catch (e) {
@@ -199,162 +289,214 @@ export function UbicacionesDudosas() {
     }
   };
 
-  const cuentas = datos?.cuentas ?? {};
+  const c = datos?.cuentas ?? {};
   const paginas = datos ? Math.max(1, Math.ceil(datos.total / datos.limit)) : 1;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <Select
-          className="max-w-xs"
-          label="Mostrar"
-          selectedKeys={[estado]}
-          onChange={(e) => setEstado(e.target.value || "todos")}
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs
+          aria-label="Qué mostrar"
+          selectedKey={estado}
+          onSelectionChange={(k) => setEstado(String(k))}
         >
-          <SelectItem key="todos">{`Todos (${(cuentas.revisar ?? 0) + (cuentas.no_coincide ?? 0)})`}</SelectItem>
-          <SelectItem key="no_coincide">{`No coinciden (${cuentas.no_coincide ?? 0})`}</SelectItem>
-          <SelectItem key="revisar">{`Por revisar (${cuentas.revisar ?? 0})`}</SelectItem>
-        </Select>
-        <Button
-          color="primary"
-          isLoading={revisando}
-          variant="flat"
-          onPress={volverARevisar}
-        >
-          Volver a revisar todos
-        </Button>
-        <p className="text-xs text-default-500">
-          Se compara el punto con los demás clientes de la misma calle. Es un
-          aviso: tú decides si está bien.
-          {cuentas.confirmado ? ` ${cuentas.confirmado} ya confirmados.` : ""}
-        </p>
+          <Tab
+            key="todos"
+            title={`Todas (${(c.revisar ?? 0) + (c.no_coincide ?? 0)})`}
+          />
+          <Tab
+            key="no_coincide"
+            title={`No coinciden (${c.no_coincide ?? 0})`}
+          />
+          <Tab key="revisar" title={`Por revisar (${c.revisar ?? 0})`} />
+        </Tabs>
+        <div className="flex flex-wrap items-center gap-3">
+          <Input
+            isClearable
+            className="w-64"
+            placeholder="Buscar por nombre o código"
+            size="sm"
+            value={buscar}
+            onClear={() => setBuscar("")}
+            onValueChange={setBuscar}
+          />
+          <Button
+            color="primary"
+            isLoading={revisando}
+            size="sm"
+            variant="flat"
+            onPress={volverARevisar}
+          >
+            Volver a revisar todos
+          </Button>
+        </div>
       </div>
 
-      <Table
-        aria-label="Ubicaciones por revisar"
-        bottomContent={
-          paginas > 1 ? (
-            <div className="flex justify-center">
-              <Pagination page={page} total={paginas} onChange={setPage} />
-            </div>
-          ) : null
-        }
-      >
-        <TableHeader>
-          <TableColumn>CLIENTE</TableColumn>
-          <TableColumn>DIRECCIÓN</TableColumn>
-          <TableColumn>ESTADO</TableColumn>
-          <TableColumn>SE COMPARÓ CON</TableColumn>
-          <TableColumn>ACCIONES</TableColumn>
-        </TableHeader>
-        <TableBody
-          emptyContent={cargando ? " " : "No hay ubicaciones por revisar."}
-          isLoading={cargando}
-          items={datos?.items ?? []}
-          loadingContent={<Spinner />}
-        >
-          {(it) => (
-            <TableRow key={it.id}>
-              <TableCell>
-                <p className="font-medium">{it.nombre}</p>
-                <p className="text-xs text-default-500">
-                  {it.sucursal?.codigo ?? ""}{" "}
-                  {it.codigo ? `· ${it.codigo}` : ""}
-                </p>
-              </TableCell>
-              <TableCell>
-                <p>{it.direccion || "—"}</p>
-                <p className="text-xs text-default-500">{it.municipio ?? ""}</p>
-              </TableCell>
-              <TableCell>
-                <Chip
-                  color={it.geoEstado === "no_coincide" ? "danger" : "warning"}
-                  size="sm"
-                  variant="flat"
-                >
-                  {it.geoEstado === "no_coincide" ? "No coincide" : "Revisar"}
-                </Chip>
-                <p className="mt-1 text-xs text-default-500">
-                  {it.motivo === "lejos_del_municipio"
-                    ? "Muy lejos del resto de su municipio"
-                    : it.geoDistanciaKm != null
-                      ? `A ${km(it.geoDistanciaKm)} km de su calle`
-                      : ""}
-                </p>
-              </TableCell>
-              <TableCell>
-                {it.vecino ? (
-                  <>
-                    <p className="text-sm">{it.vecino.nombre}</p>
-                    <p className="text-xs text-default-500">
-                      {it.vecino.direccion ?? ""}
-                    </p>
-                    {it.vecino.latitud != null &&
-                      it.vecino.longitud != null && (
-                        <a
-                          className="text-xs text-primary"
-                          href={mapa(it.vecino.latitud, it.vecino.longitud)}
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          Ver en el mapa
-                        </a>
-                      )}
-                  </>
-                ) : (
-                  <span className="text-xs text-default-400">—</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <div className="flex flex-wrap items-center gap-2">
-                  <a
-                    className="text-xs text-primary"
-                    href={mapa(it.latitud, it.longitud)}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    Ver su punto
-                  </a>
-                  <Button
-                    color="success"
-                    size="sm"
-                    variant="flat"
-                    onPress={() => {
-                      setConfirmando(it);
-                      setMotivo("");
-                    }}
-                  >
-                    Está bien
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="flat"
-                    onPress={() => {
-                      setCorrigiendo(it);
-                      setPunto(`${it.latitud}, ${it.longitud}`);
-                    }}
-                  >
-                    Corregir
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+      <p className="max-w-3xl text-sm text-default-500">
+        Cada cliente se compara con los demás de su misma calle. Si su punto cae
+        lejos, aparece aquí. Es un aviso: tú decides si el punto está bien o hay
+        que corregirlo.
+        {c.confirmado ? ` Ya confirmaste ${c.confirmado}.` : ""}
+      </p>
 
-      <Modal isOpen={!!confirmando} onClose={() => setConfirmando(null)}>
+      {cargando && !datos ? (
+        <div className="flex justify-center py-16">
+          <Spinner />
+        </div>
+      ) : (datos?.items.length ?? 0) === 0 ? (
+        <Card className="border border-default-200" shadow="none">
+          <CardBody className="py-12 text-center text-default-500">
+            {busqueda
+              ? `Ningún cliente por revisar se llama «${busqueda}».`
+              : "No hay ubicaciones por revisar."}
+          </CardBody>
+        </Card>
+      ) : (
+        <div className={`flex flex-col gap-3 ${cargando ? "opacity-60" : ""}`}>
+          {datos!.items.map((it) => (
+            <Card
+              key={it.id}
+              className="border border-default-200"
+              shadow="none"
+            >
+              <CardBody className="gap-4 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold">{it.nombre}</h3>
+                      <Chip
+                        color={
+                          it.geoEstado === "no_coincide" ? "danger" : "warning"
+                        }
+                        size="sm"
+                        variant="flat"
+                      >
+                        {it.geoEstado === "no_coincide"
+                          ? "No coincide"
+                          : "Revisar"}
+                        {it.geoDistanciaKm != null
+                          ? ` · ${km(it.geoDistanciaKm)} km`
+                          : ""}
+                      </Chip>
+                    </div>
+                    <p className="text-xs text-default-500">
+                      {[it.sucursal?.codigo, it.codigo, it.municipio]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-default-500">Dirección: </span>
+                      <span className="font-medium">
+                        {it.direccion || "sin dirección"}
+                      </span>
+                    </p>
+                    <Explicacion it={it} />
+                    <p className="text-xs text-default-400">
+                      {fuenteDelPunto(it.geoFuente, it.geoAt)}
+                    </p>
+                  </div>
+
+                  <div className="flex w-full flex-col gap-2 sm:w-52">
+                    <Button
+                      color="success"
+                      variant="solid"
+                      onPress={() => {
+                        setConfirmando(it);
+                        setMotivo("");
+                      }}
+                    >
+                      El punto está bien
+                    </Button>
+                    <Button
+                      color="primary"
+                      variant="bordered"
+                      onPress={() => {
+                        setCorrigiendo(it);
+                        setPunto("");
+                      }}
+                    >
+                      Corregir el punto
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      onPress={() =>
+                        setMapas((m) => ({ ...m, [it.id]: !m[it.id] }))
+                      }
+                    >
+                      {mapas[it.id]
+                        ? "Ocultar el mapa"
+                        : it.vecino
+                          ? "Ver los dos puntos"
+                          : "Ver el punto en el mapa"}
+                    </Button>
+                  </div>
+                </div>
+
+                {mapas[it.id] && (
+                  <div className="flex flex-col gap-2">
+                    <iframe
+                      className="h-72 w-full rounded-lg border border-default-200"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      src={mapaIncrustado(it, it.vecino)}
+                      title={`Mapa de ${it.nombre}`}
+                    />
+                    <p className="text-xs text-default-500">
+                      {it.vecino
+                        ? "El mapa traza el camino desde el punto de este cliente hasta el cliente de su calle con el que se comparó."
+                        : "Este es el punto del cliente."}{" "}
+                      <a
+                        className="text-primary underline"
+                        href={abrirMapa(it.latitud, it.longitud)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Abrir en Google Maps
+                      </a>
+                    </p>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {paginas > 1 && (
+        <div className="flex justify-center">
+          <Pagination page={page} total={paginas} onChange={setPage} />
+        </div>
+      )}
+
+      <Modal
+        isOpen={!!confirmando}
+        size="lg"
+        onClose={() => setConfirmando(null)}
+      >
         <ModalContent>
-          <ModalHeader>La ubicación es correcta</ModalHeader>
+          <ModalHeader>Confirmar que el punto está bien</ModalHeader>
           <ModalBody>
             <p className="text-sm text-default-600">
-              {confirmando?.nombre} — {confirmando?.direccion}
+              {confirmando?.nombre}: {confirmando?.direccion || "sin dirección"}
             </p>
-            <Input
-              label="Motivo (corto)"
-              value={motivo}
-              onValueChange={setMotivo}
-            />
+            <p className="text-sm">
+              ¿Por qué está bien? Elige un motivo o escribe el tuyo.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {MOTIVOS.map((m) => (
+                <Chip
+                  key={m}
+                  className="cursor-pointer"
+                  color={motivo === m ? "success" : "default"}
+                  variant={motivo === m ? "solid" : "bordered"}
+                  onClick={() => setMotivo(m)}
+                >
+                  {m}
+                </Chip>
+              ))}
+            </div>
+            <Input label="Motivo" value={motivo} onValueChange={setMotivo} />
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => setConfirmando(null)}>
@@ -366,32 +508,60 @@ export function UbicacionesDudosas() {
               isLoading={guardando}
               onPress={confirmar}
             >
-              Confirmar
+              Confirmar el punto
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={!!corrigiendo} onClose={() => setCorrigiendo(null)}>
+      <Modal
+        isOpen={!!corrigiendo}
+        size="2xl"
+        onClose={() => setCorrigiendo(null)}
+      >
         <ModalContent>
-          <ModalHeader>Corregir la ubicación</ModalHeader>
+          <ModalHeader>Corregir el punto</ModalHeader>
           <ModalBody>
             <p className="text-sm text-default-600">
-              {corrigiendo?.nombre} — {corrigiendo?.direccion}
+              {corrigiendo?.nombre}: {corrigiendo?.direccion || "sin dirección"}
             </p>
+            {corrigiendo && (
+              <iframe
+                className="h-56 w-full rounded-lg border border-default-200"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                src={mapaIncrustado(corrigiendo, corrigiendo.vecino)}
+                title={`Mapa de ${corrigiendo.nombre}`}
+              />
+            )}
             <Input
-              description="Latitud y longitud, separadas por coma"
-              label="Punto"
+              description="En Google Maps, haz clic derecho sobre el sitio correcto y copia las coordenadas. También vale pegar el enlace del mapa."
+              label="Punto nuevo"
+              placeholder="20.03000, -75.82084"
               value={punto}
               onValueChange={setPunto}
             />
+            {punto.trim() !== "" && (
+              <p
+                className={`text-sm ${nuevo ? "text-success-600" : "text-danger"}`}
+              >
+                {nuevo
+                  ? `Se guardará ${nuevo.lat.toFixed(5)}, ${nuevo.lon.toFixed(5)}.`
+                  : "No encuentro una latitud y una longitud en lo que escribiste."}
+              </p>
+            )}
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => setCorrigiendo(null)}>
               Cancelar
             </Button>
-            <Button color="primary" isLoading={guardando} onPress={corregir}>
-              Guardar punto
+            <Button
+              color="primary"
+              isDisabled={!nuevo}
+              isLoading={guardando}
+              onPress={corregir}
+            >
+              Guardar el punto
             </Button>
           </ModalFooter>
         </ModalContent>
