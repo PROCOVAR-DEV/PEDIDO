@@ -370,7 +370,13 @@ router.get('/', async (req, res) => {
       // «se miró y todavía no la tiene». Confundirlos esconde justo los que hay que
       // revisar.
       const ors = facturas.map((v) =>
-        v === 'sin_cotejar' ? { facturaEstado: null } : { facturaEstado: v },
+        v === 'sin_cotejar'
+          ? { facturaEstado: null }
+          // `devuelta` no es un estado del cotejo sino del reparto (issue #14): el pedido que volvió al almacén, o
+          // uno de cuyas facturas volvió (un pedido puede tener varias y cada una acabar distinta).
+          : v === 'devuelta'
+            ? { OR: [{ estadoEntrega: 'devuelto' }, { entregasDeFactura: { some: { estado: 'devuelto' } } }] }
+            : { facturaEstado: v },
       );
 
       conditions.push(ors.length === 1 ? ors[0] : { OR: ors });

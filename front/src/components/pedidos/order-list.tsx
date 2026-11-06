@@ -158,21 +158,34 @@ const yaCerroElDia = (fecha?: string | null): boolean => {
 };
 
 /**
- * El pedido lleva domicilio —la APK lo cotizó— y la factura NO lo cobra.
+ * El pedido lleva domicilio —la APK lo cotizó— y la factura NO lo cobra bien (issue #14).
  *
- * Es un error de quien factura (se olvida la línea «ENTREGA A DOMICILIO») y es dinero que no entra.
- * El cotejo aparta esa línea para comparar la mercancía, así que sin esto el pedido salía «igual»
- * y nadie lo veía. Se mira con lo que ya viene del servidor: lo cotizado y lo facturado. Solo si
- * ya hay factura: sin ella el domicilio todavía no se puede haber cobrado.
+ * Son dos errores de quien factura, y son dinero que no entra:
+ *   falta       la factura no trae la línea «ENTREGA A DOMICILIO»: hay que añadirla.
+ *   sin_precio  la línea está pero vale 0 o no es lo cotizado en el pedido: hay que corregir el precio.
+ *
+ * El cotejo aparta esa línea para comparar la mercancía, así que sin esto el pedido salía «igual» y nadie
+ * lo veía. Se mira con lo que ya viene del servidor: lo cotizado y lo facturado (`facturaDomicilio` es null
+ * si la línea no está y un número, quizá 0, si está). Solo si ya hay factura. Una diferencia de menos de un
+ * centavo es redondeo, no un error. Es la misma regla que `estadoDomicilioFactura` en la API.
  */
-const domicilioSinFacturar = (order: {
+const estadoDomicilioFactura = (order: {
   facturaEstado?: string | null;
   facturaDomicilio?: number | null;
   costoDomicilio?: number | null;
-}): boolean =>
-  (order.costoDomicilio ?? 0) > 0 &&
-  (order.facturaEstado === "igual" || order.facturaEstado === "cambiado") &&
-  !((order.facturaDomicilio ?? 0) > 0);
+}): "falta" | "sin_precio" | null => {
+  const costo = order.costoDomicilio ?? 0;
+
+  if (!(costo > 0)) return null;
+  if (order.facturaEstado !== "igual" && order.facturaEstado !== "cambiado") return null;
+  if (order.facturaDomicilio == null) return "falta";
+
+  const cobrado = order.facturaDomicilio;
+
+  if (!(cobrado > 0)) return "sin_precio";
+
+  return Math.round(Math.abs(cobrado - costo) * 100) >= 1 ? "sin_precio" : null;
+};
 
 /**
  * Un pedido que CUADRA porque se corrigió no es lo mismo que uno que vino bien.
@@ -193,9 +206,10 @@ const chipDeFactura = (
   },
 ): { color: "success" | "warning" | "default"; texto: string } | null => {
   // Dinero que no se cobró: va por delante de cualquier otro estado de la factura.
-  if (domicilioSinFacturar(order)) {
-    return { color: "warning", texto: "Falta el domicilio" };
-  }
+  const domicilio = estadoDomicilioFactura(order);
+
+  if (domicilio === "falta") return { color: "warning", texto: "Falta el domicilio" };
+  if (domicilio === "sin_precio") return { color: "warning", texto: "Domicilio sin precio" };
 
   if (order.facturaCorregidoAt) {
     return { color: "success", texto: "Facturado · corregido" };
@@ -419,6 +433,8 @@ const repartoOptions = [
 const facturaOptions = [
   { value: "todos", label: "Toda la facturación" },
   { value: "sin_cotejar", label: "Sin cotejar" },
+  // No es un estado del cotejo sino del reparto (issue #14): el pedido devuelto o con alguna factura devuelta.
+  { value: "devuelta", label: "Facturas devueltas" },
   ...Object.entries(facturaChip).map(([value, v]) => ({ value, label: v.texto })),
 ];
 
@@ -2832,7 +2848,7 @@ export const OrdersList = ({
                         )}
                     </div>
                   )}
-                  {selectedOrder && domicilioSinFacturar(selectedOrder) && (
+                  {selectedOrder && estadoDomicilioFactura(selectedOrder) === "falta" && (
                     <div className="rounded-large border border-warning-300 bg-warning-50 p-3">
                       <p className="text-sm font-semibold text-warning-700">
                         Falta el domicilio en la factura.
@@ -2842,6 +2858,23 @@ export const OrdersList = ({
                         factura{" "}
                         <span className="font-mono">{selectedOrder.facturaNumero ?? "—"}</span> no trae
                         la línea ENTREGA A DOMICILIO: ese cobro no se hizo.
+                      </p>
+                    </div>
+                  )}
+                  {selectedOrder && estadoDomicilioFactura(selectedOrder) === "sin_precio" && (
+                    <div className="rounded-large border border-warning-300 bg-warning-50 p-3">
+                      <p className="text-sm font-semibold text-warning-700">
+                        Domicilio sin precio en la factura.
+                      </p>
+                      <p className="text-xs text-default-600">
+                        El pedido lleva un domicilio de {$$(selectedOrder.costoDomicilio ?? 0)} y la
+                        factura{" "}
+                        <span className="font-mono">{selectedOrder.facturaNumero ?? "—"}</span> trae la
+                        línea ENTREGA A DOMICILIO{" "}
+                        {(selectedOrder.facturaDomicilio ?? 0) > 0
+                          ? `cobrada a ${$$(selectedOrder.facturaDomicilio ?? 0)}, no a lo cotizado`
+                          : "con valor 0"}
+                        : hay que corregir el precio.
                       </p>
                     </div>
                   )}

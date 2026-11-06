@@ -71,6 +71,7 @@ import {
 import { facturasPorFolio, prefijoDeNota } from './emparejarFactura';
 import { catalogoDeSucursal, type CatalogoSucursal } from './catalogoSucursal';
 import { emitEvent } from './events';
+import { estadoDomicilioFactura } from './domicilioFactura';
 import { guardarUltimaPasada } from './cotejoEstado';
 import { avisarPedidoCambiado } from './webhook';
 
@@ -160,15 +161,26 @@ export interface ResultadoCotejo {
  *                los alcanza.
  */
 /**
- * Los pedidos que llevan domicilio cotizado y cuya factura NO lo cobra. Son los únicos que el
- * modo `soloDomicilioFaltante` vuelve a mirar: sirve para enterarse de que la factura ya se
- * arregló sin recorrer todos los demás.
+ * Los pedidos que llevan domicilio cotizado y cuya factura NO lo cobra bien: sin la línea (`falta`) o con la
+ * línea a 0 o con otro importe que el de Pedido (`sin_precio`; ver `estadoDomicilioFactura`). Son los únicos
+ * que el modo `soloDomicilioFaltante` vuelve a mirar: sirve para enterarse de que la factura ya se arregló
+ * sin recorrer todos los demás.
  */
-const FALTA_DOMICILIO: Prisma.PedidoWhereInput = {
-  costoDomicilio: { gt: 0 },
-  facturaDomicilio: null,
-  facturaEstado: { in: ['igual', 'cambiado'] },
-};
+async function faltaDomicilio(sucursalId: string, desde: Date): Promise<Prisma.PedidoWhereInput> {
+  // Con la línea a otro importe que el cotizado (Prisma no compara una columna con otra con tolerancia): por SQL, un centavo.
+  const distintos = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "Order"
+     WHERE "sucursalId" = ${sucursalId} AND fecha >= ${desde}
+       AND "deliveryCost" > 0 AND "facturaDomicilio" > 0
+       AND round(abs("facturaDomicilio" - "deliveryCost")::numeric, 2) >= 0.01`;
+
+  return {
+    costoDomicilio: { gt: 0 },
+    facturaEstado: { in: ['igual', 'cambiado'] },
+    // En un AND aparte: el carril rápido ya usa `OR` y no deben pisarse al juntarlos.
+    AND: [{ OR: [{ facturaDomicilio: null }, { facturaDomicilio: { lte: 0 } }, { id: { in: distintos.map((d) => d.id) } }] }],
+  };
+}
 
 export async function cotejarUnaVez(
   { rapido = false, soloDomicilioFaltante = false, desde: desdeFijo, hasta: hastaFijo, facturasHasta }: {
@@ -233,7 +245,7 @@ export async function cotejarUnaVez(
       let ventas: LineaVentaVentra[];
 
       if (soloDomicilioFaltante) {
-        const hay = await prisma.pedido.count({ where: { sucursalId: suc.id, fecha: { gte: desdePedidos }, ...FALTA_DOMICILIO } });
+        const hay = await prisma.pedido.count({ where: { sucursalId: suc.id, fecha: { gte: desdePedidos }, ...(await faltaDomicilio(suc.id, desdePedidos)) } });
 
         if (hay === 0) {
           salida.push(r);
@@ -319,7 +331,7 @@ export async function cotejarUnaVez(
            * pedidos completados y diciendo «no apareció» a la vez (21-23/09/2026).
            */
           ...(rapido ? { OR: [{ facturaEstado: null }, { facturaEstado: 'sin_factura' }] } : {}),
-          ...(soloDomicilioFaltante ? FALTA_DOMICILIO : {}),
+          ...(soloDomicilioFaltante ? await faltaDomicilio(suc.id, desdePedidos) : {}),
         },
         include: { items: true, cliente: true },
       });
@@ -562,9 +574,11 @@ async function cotejarUnPedido(
   // arregló (Ventra no dice cuándo se editó, pero esta pasada es la primera que ve lo nuevo).
   const cambioDomicilio =
     'facturaDomicilio' in datos &&
-    (p.facturaEstado === 'igual' || p.facturaEstado === 'cambiado') &&
-    ((p as { costoDomicilio?: number | null }).costoDomicilio ?? 0) > 0 &&
-    !((p.facturaDomicilio ?? 0) > 0);
+    estadoDomicilioFactura({
+      costoDomicilio: (p as { costoDomicilio?: number | null }).costoDomicilio,
+      facturaEstado: p.facturaEstado,
+      facturaDomicilio: p.facturaDomicilio,
+    }) !== null;
 
   /**
    * Y AQUÍ SE CORRIGE EL PEDIDO CON LO QUE DICE LA FACTURA.
