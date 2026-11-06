@@ -732,6 +732,17 @@ router.get('/geo-dudosos', async (req, res) => {
   try {
     const estado = String(req.query.estado ?? 'todos');
     const estados = estado === 'revisar' || estado === 'no_coincide' ? [estado] : ['revisar', 'no_coincide'];
+    // POR QUÉ se avisa, que es lo que el supervisor quiere ver. Sale del estado y de si hay distancia:
+    // sin distancia y «no coincide» = el punto cae en otro municipio; sin distancia y «revisar» = la calle del punto
+    // no es la escrita y el mapa no pudo ubicar la dirección (ver `geoComprobacion.ts`).
+    const MOTIVOS: Record<string, { geoEstado: string; geoDistanciaKm: null | { not: null } }> = {
+      otro_municipio: { geoEstado: 'no_coincide', geoDistanciaKm: null },
+      lejos: { geoEstado: 'no_coincide', geoDistanciaKm: { not: null } },
+      media_distancia: { geoEstado: 'revisar', geoDistanciaKm: { not: null } },
+      calle_distinta: { geoEstado: 'revisar', geoDistanciaKm: null },
+    };
+    const motivo = String(req.query.motivo ?? 'todos');
+    const filtroEstado = MOTIVOS[motivo] ?? { geoEstado: { in: estados } };
     const page = Math.max(1, parseInt(String(req.query.page)) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit)) || 25));
     const donde = { activo: true, ...(alcance.sucursalId ? { sucursalId: alcance.sucursalId } : {}) };
@@ -740,11 +751,12 @@ router.get('/geo-dudosos', async (req, res) => {
       ? { OR: [{ nombre: { contains: q, mode: 'insensitive' as const } }, { codigo: { contains: q, mode: 'insensitive' as const } }] }
       : {};
 
-    const [total, filas, cuentas] = await Promise.all([
-      prisma.cliente.count({ where: { ...donde, ...buscar, geoEstado: { in: estados } } }),
+    const [total, filas, cuentas, ...porMotivo] = await Promise.all([
+      prisma.cliente.count({ where: { ...donde, ...buscar, ...filtroEstado } }),
       prisma.cliente.findMany({
-        where: { ...donde, ...buscar, geoEstado: { in: estados } },
-        orderBy: [{ geoDistanciaKm: { sort: 'desc', nulls: 'last' } }, { nombre: 'asc' }],
+        where: { ...donde, ...buscar, ...filtroEstado },
+        // Lo más seguro primero: «no coincide» antes que «revisar», y dentro de cada uno el más lejos.
+        orderBy: [{ geoEstado: 'asc' }, { geoDistanciaKm: { sort: 'desc', nulls: 'last' } }, { nombre: 'asc' }],
         skip: (page - 1) * limit,
         take: limit,
         select: {
@@ -754,6 +766,7 @@ router.get('/geo-dudosos', async (req, res) => {
         },
       }),
       prisma.cliente.groupBy({ by: ['geoEstado'], where: donde, _count: { _all: true } }),
+      ...Object.values(MOTIVOS).map((m) => prisma.cliente.count({ where: { ...donde, ...m } })),
     ]);
 
     const geos = filas.length
@@ -768,6 +781,7 @@ router.get('/geo-dudosos', async (req, res) => {
 
     res.json({
       total, page, limit,
+      motivos: Object.fromEntries(Object.keys(MOTIVOS).map((k, i) => [k, porMotivo[i]])),
       pendientes,
       cuentas: Object.fromEntries(cuentas.map((c) => [c.geoEstado ?? 'sin_evaluar', c._count._all])),
       items: filas.map((f) => {

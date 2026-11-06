@@ -96,3 +96,18 @@ describe('calles citadas, ordinales y plurales (afinado del 06/11/2026)', () => 
     assert.equal(hayQueUbicarLaDireccion(cl('Calle Maceo 10'), punto(null)), true);
   });
 });
+
+describe('una letra de diferencia en nombres largos', () => {
+  test('«Antunes» y «Antúnez», «Villuenda» y «Villuendas»: la misma calle', () => {
+    assert.equal(comprobar(cl('Antunes e/ Alba y Quiala'), punto('Antúnez')).estado, 'coincide');
+    assert.equal(comprobar(cl('Villuenda No. 25 E/ Floro Vistel'), punto('Calle Villuendas')).estado, 'coincide');
+  });
+
+  test('en palabras cortas una letra ya es otra calle: «Mella» no es «Melia»', () => {
+    assert.equal(comprobar(cl('Calle Mella 10'), punto('Melia')).estado, 'revisar');
+  });
+
+  test('dos letras distintas tampoco', () => {
+    assert.equal(comprobar(cl('Calle Cespedes 10'), punto('Calle Cisneros')).estado, 'revisar');
+  });
+});

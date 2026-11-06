@@ -98,7 +98,25 @@ export function viaEscrita(direccion: string | null | undefined): string[] {
   return claves(t.split(/\s(?:#|no\.?\s|n\s?\d|e\/|entre|\/)|,|\sesq/)[0]);
 }
 
-const interseccion = (a: string[], b: string[]) => a.some((x) => b.includes(x));
+/**
+ * ¿Son la misma palabra, a una letra de distancia? «Antunes» y «Antúnez», «Villuenda» y «Villuendas». Solo en palabras
+ * de 6 letras o más y sin números: en una corta («Mella», «Calle») una letra ya es otra calle.
+ */
+function parecidas(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 6 || b.length < 6 || /\d/.test(a + b) || Math.abs(a.length - b.length) > 1) return false;
+
+  // Distancia de edición ≤ 1: una sustitución, una inserción o un borrado.
+  let i = 0;
+
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : b.slice(i + 1) === a.slice(i);
+}
+
+const interseccion = (a: string[], b: string[]) => a.some((x) => b.some((y) => parecidas(x, y)));
 
 /** ¿El municipio escrito es alguno de los que contesta el buscador? null si el buscador no dijo ninguno. */
 function municipioCoincide(escrito: string | null, delPunto: string[]): boolean | null {

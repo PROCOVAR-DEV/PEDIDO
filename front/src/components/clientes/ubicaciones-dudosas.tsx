@@ -57,6 +57,7 @@ interface Respuesta {
   total: number;
   limit: number;
   pendientes: number;
+  motivos: Record<string, number>;
   cuentas: Record<string, number>;
   items: Item[];
 }
@@ -244,8 +245,36 @@ function Explicacion({ it }: { it: Item }) {
   );
 }
 
+/** Por qué avisa cada grupo: lo que ve el supervisor en las pestañas y lo que explica cada una. */
+const MOTIVOS_DEL_AVISO = [
+  {
+    clave: "otro_municipio",
+    titulo: "Otro municipio",
+    texto:
+      "El punto cae en otro municipio que el de la dirección. Es lo más seguro de que está mal: empieza por aquí.",
+  },
+  {
+    clave: "lejos",
+    titulo: "Muy lejos",
+    texto:
+      "El mapa ubica la dirección escrita a más de 2 km del punto guardado.",
+  },
+  {
+    clave: "media_distancia",
+    titulo: "A 0,5-2 km",
+    texto:
+      "El mapa ubica la dirección escrita a entre 500 m y 2 km del punto: puede ser la misma zona o no.",
+  },
+  {
+    clave: "calle_distinta",
+    titulo: "Calle distinta",
+    texto:
+      "La calle que ve el mapa en el punto no es la de la dirección y el mapa no pudo ubicar la dirección escrita: hay que mirarlo en el mapa. Aquí hay muchos falsos avisos (direcciones con nombres que el mapa no tiene).",
+  },
+] as const;
+
 export function UbicacionesDudosas() {
-  const [estado, setEstado] = useState("todos");
+  const [grupo, setGrupo] = useState("todos");
   const [buscar, setBuscar] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [page, setPage] = useState(1);
@@ -265,7 +294,7 @@ export function UbicacionesDudosas() {
     try {
       const q = busqueda ? `&search=${encodeURIComponent(busqueda)}` : "";
       const r = await fetch(
-        `${getApiBaseUrl()}/clientes/geo-dudosos?estado=${estado}&page=${page}&limit=15${q}`,
+        `${getApiBaseUrl()}/clientes/geo-dudosos?motivo=${grupo}&page=${page}&limit=15${q}`,
       );
       const j = await r.json();
 
@@ -280,7 +309,7 @@ export function UbicacionesDudosas() {
     } finally {
       setCargando(false);
     }
-  }, [estado, page, busqueda]);
+  }, [grupo, page, busqueda]);
 
   useEffect(() => {
     cargar();
@@ -288,7 +317,7 @@ export function UbicacionesDudosas() {
 
   useEffect(() => {
     setPage(1);
-  }, [estado, busqueda]);
+  }, [grupo, busqueda]);
 
   // La búsqueda espera a que se deje de teclear.
   useEffect(() => {
@@ -394,19 +423,17 @@ export function UbicacionesDudosas() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs
-          aria-label="Qué mostrar"
-          selectedKey={estado}
-          onSelectionChange={(k) => setEstado(String(k))}
+          aria-label="Por qué avisa"
+          selectedKey={grupo}
+          onSelectionChange={(k) => setGrupo(String(k))}
         >
           <Tab
             key="todos"
-            title={`Todas (${(c.revisar ?? 0) + (c.no_coincide ?? 0)})`}
+            title={`Todas (${Object.values(datos?.motivos ?? {}).reduce((t, n) => t + n, 0)})`}
           />
-          <Tab
-            key="no_coincide"
-            title={`No coinciden (${c.no_coincide ?? 0})`}
-          />
-          <Tab key="revisar" title={`Por revisar (${c.revisar ?? 0})`} />
+          {MOTIVOS_DEL_AVISO.map((m) => (
+            <Tab key={m.clave} title={`${m.titulo} (${datos?.motivos?.[m.clave] ?? 0})`} />
+          ))}
         </Tabs>
         <div className="flex flex-wrap items-center gap-3">
           <Input
@@ -436,6 +463,9 @@ export function UbicacionesDudosas() {
         dirección escrita. Si no coinciden, aparece aquí. Es un aviso: tú
         decides si el punto está bien o hay que corregirlo.
         {c.confirmado ? ` Ya confirmaste ${c.confirmado}.` : ""}
+        {MOTIVOS_DEL_AVISO.find((m) => m.clave === grupo)
+          ? ` ${MOTIVOS_DEL_AVISO.find((m) => m.clave === grupo)!.texto}`
+          : ""}
         {datos?.pendientes
           ? ` Faltan por comprobar ${datos.pendientes} puntos; se van revisando solos, cada uno unos segundos.`
           : ""}
@@ -474,11 +504,12 @@ export function UbicacionesDudosas() {
                         variant="flat"
                       >
                         {it.geoEstado === "no_coincide"
-                          ? "No coincide"
-                          : "Revisar"}
-                        {it.geoDistanciaKm != null
-                          ? ` · ${km(it.geoDistanciaKm)} km`
-                          : ""}
+                          ? it.geoDistanciaKm == null
+                            ? "Otro municipio"
+                            : `No coincide · ${km(it.geoDistanciaKm)} km`
+                          : it.geoDistanciaKm != null
+                            ? `Revisar · ${km(it.geoDistanciaKm)} km`
+                            : "Revisar · calle distinta"}
                       </Chip>
                       <span className="text-xs text-default-500">
                         {[it.sucursal?.codigo, it.codigo, it.municipio]
