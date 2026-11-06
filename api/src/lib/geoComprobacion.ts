@@ -46,16 +46,42 @@ const SIN_VALOR = new Set([
   'bloque', 'piso', 'km', 'zona', 'sn', 'ciudad', 'pueblo', 'final', 'frente', 'calzada',
 ]);
 
+/**
+ * Una palabra en su forma comparable: «5ta» y «5» son la misma calle, «Acacias» y «Acacia» también. Se aplica
+ * a lo escrito y a lo que dice el mapa por igual, así que no hace falta que coincidan en cómo lo escribieron.
+ */
+function raiz(p: string): string {
+  const ordinal = p.match(/^(\d+)(?:ra|da|ta|era|mo|vo|no|ro|to|ma|a|o)?$/);
+
+  if (ordinal) return ordinal[1];
+
+  return p.length > 4 && p.endsWith('s') ? p.slice(0, -1) : p;
+}
+
 /** Las palabras de una vía: letras de 4 o más, y los números y ordinales («17», «6ta», «9 norte»). */
 function claves(texto: string | null | undefined): string[] {
   return [
     ...new Set(
       normalizarTexto(texto)
         .split(/[^a-z0-9]+/)
-        .filter((p) => p && !SIN_VALOR.has(p) && (/\d/.test(p) ? true : p.length >= 4)),
+        .filter((p) => p && !SIN_VALOR.has(p) && (/\d/.test(p) ? true : p.length >= 4))
+        .map(raiz),
     ),
   ];
 }
+
+/**
+ * Palabras que están en media Cuba y no identifican una calle: nombres de santos, puntos cardinales, tipos de
+ * lugar. Se usan para NO dar por buena una calle citada de pasada (una esquina, un «entre») solo porque comparte
+ * una de ellas: «Santa Rosa» no es «Santa Rita».
+ */
+const COMUNES = new Set([
+  'santa', 'santo', 'jose', 'maria', 'antonio', 'juan', 'carlos', 'central', 'norte', 'este', 'oeste', 'nueva', 'nuevo',
+  'vieja', 'viejo', 'general', 'comandante', 'capitan', 'doctor', 'parque', 'plaza', 'altos', 'bajos', 'kiosko', 'kiosco',
+  'cafeteria', 'bodega', 'local', 'poblado', 'direccion', 'esquina', 'cerca', 'detras', 'frente', 'junto', 'entre',
+  'martir', 'libertad', 'independencia', 'republica', 'victoria', 'cuba',
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+].map(raiz));
 
 /**
  * Las palabras de la VÍA que escribió quien tomó la dirección: lo que va antes del número, del «entre» o de la
@@ -110,6 +136,14 @@ export function comprobar(
     return { estado: 'coincide', distanciaKm: null, motivo: 'calle' };
   }
 
+  // Una calle CITADA en la dirección (la de «entre», la de la «esquina») también vale: el punto de una esquina o de una
+  // cuadra cae en cualquiera de ellas. Solo con palabras que identifican la calle (no «Santa» o «Central» a secas).
+  const sinPortal = normalizarTexto(cliente.direccion).replace(/(#|\bno\.?|\bnum(?:ero)?\.?)\s*\d+\w*/g, ' ');
+  const citadas = claves(sinPortal).filter((p) => !COMUNES.has(p));
+  const delMapa = [...claves(delPunto.calle), ...(delPunto.barrio ? claves(delPunto.barrio) : [])];
+
+  if (interseccion(citadas, delMapa)) return { estado: 'coincide', distanciaKm: null, motivo: 'calle' };
+
   // Dirección → punto: dónde ubica el buscador el texto, y cuánto dista.
   if (adelante?.consultado && adelante.latitud != null && adelante.longitud != null) {
     const d = Math.round(distanciaKm(cliente, { latitud: adelante.latitud, longitud: adelante.longitud }) * 1000) / 1000;
@@ -117,6 +151,10 @@ export function comprobar(
 
     return { estado, distanciaKm: d, motivo: 'direccion' };
   }
+
+  // El buscador no conoce NINGUNA calle en ese punto (campo, descampado) y tampoco supo ubicar la dirección: no hay
+  // con qué juzgar. Decir «revisar» ahí llenaba la lista de avisos que nadie puede comprobar con esto.
+  if (adelante?.consultado && !delPunto.calle) return { estado: 'sin_referencia', distanciaKm: null, motivo: 'sin_datos' };
 
   // La calle del punto no es la escrita y el buscador no supo ubicar la dirección: a revisar.
   return { estado: 'revisar', distanciaKm: null, motivo: 'calle' };

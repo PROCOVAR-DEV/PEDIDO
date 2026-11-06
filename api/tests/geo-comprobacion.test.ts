@@ -67,3 +67,32 @@ describe('dirección → punto', () => {
     assert.equal(comprobar(cl('Calle Maceo 10'), punto('Gómez'), { consultado: true, latitud: null, longitud: null }).estado, 'revisar');
   });
 });
+
+describe('calles citadas, ordinales y plurales (afinado del 06/11/2026)', () => {
+  test('el punto cae en la calle de una «esquina» o de un «entre»: coincide', () => {
+    assert.equal(comprobar(cl('5 oeste esquina Narciso Lopez'), punto('Narciso López')).estado, 'coincide');
+    assert.equal(comprobar(cl('Fernando Suarez #42 entre Coronel Reyes y Cucalambé'), punto('Coronel Reyes')).estado, 'coincide');
+  });
+
+  test('«5ta» y «5», «Acacia» y «Acacias» son lo mismo', () => {
+    assert.equal(comprobar(cl('calle 4ta % Alfredo Zallas y Bravo Correoso'), punto('4')).estado, 'coincide');
+    assert.equal(comprobar(cl('Calle acacia #67 alto entre Pérez Andrade y Cervantes'), punto('Avenida de Acacias')).estado, 'coincide');
+  });
+
+  test('el número de portal no es una calle: «Maceo #14» no coincide con la calle 14', () => {
+    assert.equal(comprobar(cl('Calle Maceo #14'), punto('14')).estado, 'revisar');
+  });
+
+  test('una palabra suelta que está en media Cuba no basta: «Santa Rosa» no es «Santa Rita»', () => {
+    assert.equal(comprobar(cl('Mejorana esquina Santa Rosa'), punto('Santa Rita')).estado, 'revisar');
+    assert.equal(comprobar(cl('Cespedes e/ 1ro de Mayo y Dolores'), punto('20 de Mayo')).estado, 'revisar');
+  });
+
+  test('si el mapa no conoce ninguna calle en el punto y no ubica la dirección, no se puede juzgar', () => {
+    const buscada = { consultado: true, latitud: null, longitud: null };
+
+    assert.equal(comprobar(cl('Calle Maceo 10'), punto(null), buscada).estado, 'sin_referencia');
+    // Antes de preguntar por la dirección sigue pendiente de ubicarla.
+    assert.equal(hayQueUbicarLaDireccion(cl('Calle Maceo 10'), punto(null)), true);
+  });
+});
