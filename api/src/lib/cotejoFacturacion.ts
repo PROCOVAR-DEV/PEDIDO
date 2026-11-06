@@ -72,6 +72,7 @@ import { facturasPorFolio, prefijoDeNota } from './emparejarFactura';
 import { catalogoDeSucursal, type CatalogoSucursal } from './catalogoSucursal';
 import { emitEvent } from './events';
 import { estadoDomicilioFactura } from './domicilioFactura';
+import { idsConDomicilioSinPrecio } from './domicilioFacturaDb';
 import { guardarUltimaPasada } from './cotejoEstado';
 import { avisarPedidoCambiado } from './webhook';
 
@@ -167,18 +168,14 @@ export interface ResultadoCotejo {
  * sin recorrer todos los demás.
  */
 async function faltaDomicilio(sucursalId: string, desde: Date): Promise<Prisma.PedidoWhereInput> {
-  // Con la línea a otro importe que el cotizado (Prisma no compara una columna con otra con tolerancia): por SQL, un centavo.
-  const distintos = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM "Order"
-     WHERE "sucursalId" = ${sucursalId} AND fecha >= ${desde}
-       AND "deliveryCost" > 0 AND "facturaDomicilio" > 0
-       AND round(abs("facturaDomicilio" - "deliveryCost")::numeric, 2) >= 0.01`;
+  const distintos = await idsConDomicilioSinPrecio(sucursalId, desde);
 
   return {
-    costoDomicilio: { gt: 0 },
+    costoDomicilio: { not: null },
+    OR: [{ requiere_domicilio: true }, { costoDomicilio: { gt: 0 } }],
     facturaEstado: { in: ['igual', 'cambiado'] },
     // En un AND aparte: el carril rápido ya usa `OR` y no deben pisarse al juntarlos.
-    AND: [{ OR: [{ facturaDomicilio: null }, { facturaDomicilio: { lte: 0 } }, { id: { in: distintos.map((d) => d.id) } }] }],
+    AND: [{ OR: [{ facturaDomicilio: null }, { id: { in: distintos } }] }],
   };
 }
 
@@ -575,6 +572,7 @@ async function cotejarUnPedido(
   const cambioDomicilio =
     'facturaDomicilio' in datos &&
     estadoDomicilioFactura({
+      requiere_domicilio: (p as { requiere_domicilio?: boolean | null }).requiere_domicilio,
       costoDomicilio: (p as { costoDomicilio?: number | null }).costoDomicilio,
       facturaEstado: p.facturaEstado,
       facturaDomicilio: p.facturaDomicilio,

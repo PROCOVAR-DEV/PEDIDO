@@ -158,7 +158,7 @@ const yaCerroElDia = (fecha?: string | null): boolean => {
 };
 
 /**
- * El pedido lleva domicilio —la APK lo cotizó— y la factura NO lo cobra bien (issue #14).
+ * El pedido pide domicilio —con su valor puesto— y la factura NO lo cobra bien (issue #14).
  *
  * Son dos errores de quien factura, y son dinero que no entra:
  *   falta       la factura no trae la línea «ENTREGA A DOMICILIO»: hay que añadirla.
@@ -170,21 +170,17 @@ const yaCerroElDia = (fecha?: string | null): boolean => {
  * centavo es redondeo, no un error. Es la misma regla que `estadoDomicilioFactura` en la API.
  */
 const estadoDomicilioFactura = (order: {
+  requiere_domicilio?: boolean | null;
   facturaEstado?: string | null;
   facturaDomicilio?: number | null;
   costoDomicilio?: number | null;
 }): "falta" | "sin_precio" | null => {
-  const costo = order.costoDomicilio ?? 0;
-
-  if (!(costo > 0)) return null;
+  // Domicilio marcado y CON valor puesto (aunque sea 0): marcado sin valor es que Entrega aún no lo calculó.
+  if (order.costoDomicilio == null || !(order.requiere_domicilio === true || order.costoDomicilio > 0)) return null;
   if (order.facturaEstado !== "igual" && order.facturaEstado !== "cambiado") return null;
   if (order.facturaDomicilio == null) return "falta";
 
-  const cobrado = order.facturaDomicilio;
-
-  if (!(cobrado > 0)) return "sin_precio";
-
-  return Math.round(Math.abs(cobrado - costo) * 100) >= 1 ? "sin_precio" : null;
+  return Math.round(Math.abs(order.facturaDomicilio - order.costoDomicilio) * 100) >= 1 ? "sin_precio" : null;
 };
 
 /**
@@ -451,6 +447,9 @@ const domicilioOptions = [
   { value: "pendiente", label: "Domicilio sin calcular" },
   { value: "requiere", label: "Requieren domicilio" },
   { value: "sin", label: "Sin domicilio" },
+  // Lo que la factura hizo con el domicilio (issue #14): para conciliar.
+  { value: "factura_falta", label: "Falta el domicilio (en la factura)" },
+  { value: "factura_sin_precio", label: "Domicilio sin precio (en la factura)" },
 ];
 
 interface VendedorOpt {

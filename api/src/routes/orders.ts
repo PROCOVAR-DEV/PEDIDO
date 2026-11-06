@@ -35,6 +35,7 @@ import { cambioDeLinea, cambiosDeCabecera, type Cambio } from '../lib/cambiosDeP
 import { mintSseTicket, consumeSseTicket } from '../lib/sseTickets';
 import { ingestaAuth } from '../middleware/ingestaAuth';
 import { ENTREGAS_DE_FACTURA } from '../lib/estadoEntrega';
+import { idsConDomicilioSinPrecio } from '../lib/domicilioFacturaDb';
 import { soloVisibles, visibleDesde } from '../lib/liberacionPedidos';
 import { puedeReasignar } from '../lib/reasignarCliente';
 import { extremosDelDia } from '../lib/diaCubano';
@@ -488,6 +489,22 @@ router.get('/', async (req, res) => {
             ],
           });
           break;
+        case 'factura_falta':
+          // Pidió domicilio, con su valor puesto, y la factura no trae la línea (issue #14).
+          conditions.push({
+            OR: [{ requiere_domicilio: true }, { costoDomicilio: { gt: 0 } }],
+            costoDomicilio: { not: null },
+            facturaEstado: { in: ['igual', 'cambiado'] },
+            facturaDomicilio: null,
+          });
+          break;
+        case 'factura_sin_precio': {
+          // La factura trae la línea pero a 0 o a otro importe que el puesto en Pedido (issue #14).
+          const ids = await idsConDomicilioSinPrecio(sucursalId);
+
+          conditions.push({ id: { in: ids.length ? ids : ['__no_match__'] } });
+          break;
+        }
       }
     }
 
